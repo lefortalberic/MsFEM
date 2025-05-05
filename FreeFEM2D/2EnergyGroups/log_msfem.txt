@@ -1,0 +1,52 @@
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_OS_carre_filtre avec les parametres _N_256_n_8_eps_0.125_NumVP_1_osCoef_2_NumCoeffDiff_4
+Temps d'initialisation du maillage, et de l'espace de discretisation : 41.9962 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 45.655 secondes 
+Temps de resolution online du probleme MsFEM : 0.003073 secondes 
+lambda_MsFEM_MsFEM_OS_carre_filtre = 19.5494
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.62138 secondes 
+WARNING: No reference solution was found and it is recomputed
+Temps de calcul de la solution de reference : 3.72971 secondes 
+lambda_MsFEM_OS_carre_filtre = 19.5494
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 2.88464 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_OS_carre_filtre avec les parametres _N_256_n_8_eps_0.125_NumVP_1_osCoef_2_NumCoeffDiff_4
+Temps d'initialisation du maillage, et de l'espace de discretisation : 42.7164 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 45.5126 secondes 
+Temps de resolution online du probleme MsFEM : 0.002857 secondes 
+lambda_MsFEM_MsFEM_OS_carre_filtre = 19.5494
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.54635 secondes 
+WARNING: No reference solution was found and it is recomputed
+Temps de calcul de la solution de reference : 3.77013 secondes 
+lambda_MsFEM_OS_carre_filtre = 19.5494
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 2.90874 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Calcul de la solution de reference avec les parametres _N_256_eps_0.125_NumVP_1_NumCoeffDiff_4
+Temps d'initialisation du maillage, et de l'espace de discretisation : 41.7676 secondes 
+Debut de la methode REF avec les parametres _N_256_eps_0.125_NumVP_1_NumCoeffDiff_4
+Temps de calcul de la solution de reference : 4.22004 secondes 
+lambda_REF = 19.4442
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_OS_carre_filtre avec les parametres _N_256_n_8_eps_0.125_NumVP_1_osCoef_2_NumCoeffDiff_4
+Temps d'initialisation du maillage, et de l'espace de discretisation : 42.4909 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 45.6554 secondes 
+Temps de resolution online du probleme MsFEM : 0.002898 secondes 
+lambda_MsFEM_MsFEM_OS_carre_filtre = 19.5494
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.60091 secondes 
+WARNING: No reference solution was found and it is recomputed
+Temps de calcul de la solution de reference : 3.55501 secondes 
+lambda_MsFEM_OS_carre_filtre = 19.5494
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 2.44239 secondes 
+////////////////////////////////////////////////////////////////

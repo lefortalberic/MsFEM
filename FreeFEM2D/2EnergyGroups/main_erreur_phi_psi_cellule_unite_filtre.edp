@@ -1,0 +1,288 @@
+//mpirun -np 1 FreeFem++-mpi -wg main_erreur_phi_psi_cellule_unite_filtre.edp -v 0
+
+//Fichier qui calcul sur Omega le vecteur propre Phi_1 et Phi_2 avec la méthode du filtre
+//puis qui calcul l'erreur sur Omega et sur un domaine interieur entre Phi et Psi
+//code à lancer avec n=3
+string nameMethod = "Psi_Phi_carre_filtre";
+
+include "init.edp"
+///////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////// */
+include "Psi_triche.edp"
+
+
+Psieps1 = VecteurproprePsi1(fmod(x/eps,1), fmod(y/eps,1)) ;
+Psieps2 = VecteurproprePsi2(fmod(x/eps,1), fmod(y/eps,1)) ;
+Psiepsadjoint1 = VecteurproprePsiadjoint1(fmod(x/eps,1), fmod(y/eps,1)) ;
+Psiepsadjoint2 = VecteurproprePsiadjoint2(fmod(x/eps,1), fmod(y/eps,1)) ;
+
+if (debug) plot(Psieps1,wait=1,value=1,fill=1, cmm="Psi 1 en x/eps sur Omega");
+if (debug) plot(Psieps2,wait=1,value=1,fill=1, cmm="Psi 2 en x/eps sur Omega");
+if (debug) plot(Psiepsadjoint1,wait=1,value=1,fill=1, cmm="Psiadjoint 1 en x/eps sur Omega");
+if (debug) plot(Psiepsadjoint2,wait=1,value=1,fill=1, cmm="Psiadjoint 2 en x/eps sur Omega");
+
+varf oploc11 (u,v)
+        = int2d(Th)(FiltrePhi*(sigmaeps1*u*v))
+        + int2d(Th)(eps^2*FiltrePhi*a(Aeps1,u,v))
+        ;
+
+varf oploc22 (u,v)
+        = int2d(Th)(FiltrePhi*(sigmaeps4*u*v))
+        + int2d(Th)(eps^2*FiltrePhi*a(Aeps2,u,v))
+        ;
+
+varf oploc12 (u,v)
+        = int2d(Th)(FiltrePhi*(sigmaeps2*u)*v)
+        ;
+
+varf oploc21 (u,v)
+        = int2d(Th)(FiltrePhi*(sigmaeps3*u)*v)
+        ;
+
+varf bloc (u,v) = int2d(Th)(FiltrePhi*u*v); //no boundary condition
+
+varf CLXfiltreloc (u, v)
+    = int2d(Th)(FiltrePhi*1*dx(v)) 
+    ;
+varf CLYfiltreloc (u,v)
+    = int2d(Th)(FiltrePhi*1*dy(v)) 
+    ;
+
+
+matrix<real> A11 = oploc11(Vh, Vh, factorize=1); 
+matrix<real> A22 = oploc22(Vh, Vh, factorize=1);
+matrix<real> A12 = oploc12(Vh, Vh, factorize=1);
+matrix<real> A21 = oploc21(Vh, Vh, factorize=1);
+matrix<real> B = bloc(Vh, Vh, solver=CG, eps=1e-20);
+
+real[int] CLXfiltreloclocS1 = CLXfiltreloc(0, Vh); 
+real[int] CLYfiltreloclocS1 = CLYfiltreloc(0, Vh);
+
+real[int] Zeros = 0*CLXfiltreloclocS1;
+
+matrix CLXfiltreloclocS11(2*(CLXfiltreloclocS1.n),1); CLXfiltreloclocS11 = [[CLXfiltreloclocS1], [Zeros]];
+matrix CLYfiltreloclocS11(2*(CLYfiltreloclocS1.n),1); CLYfiltreloclocS11 = [[CLYfiltreloclocS1], [Zeros]];
+matrix CLXfiltreloclocS12(2*(CLXfiltreloclocS1.n),1); CLXfiltreloclocS12 = [ [Zeros], [CLXfiltreloclocS1]];
+matrix CLYfiltreloclocS12(2*(CLYfiltreloclocS1.n),1); CLYfiltreloclocS12 = [ [Zeros], [CLYfiltreloclocS1]];
+matrix MatZeros = 0*A11;
+
+
+matrix Aglobal(2*(A11.n)+4,2*(A11.n)+4);
+matrix Bglobal(2*(A11.n)+4,2*(A11.n)+4);
+Aglobal = [ [A11 , A12 , CLXfiltreloclocS1 , CLYfiltreloclocS1, Zeros, Zeros] , [A21 , A22 , Zeros, Zeros, CLXfiltreloclocS1 , CLYfiltreloclocS1] , [CLXfiltreloclocS1' ,Zeros',0, 0, 0, 0] , [CLYfiltreloclocS1',Zeros',0, 0, 0, 0] , [Zeros', CLXfiltreloclocS1',0, 0, 0, 0] , [Zeros', CLYfiltreloclocS1',0, 0, 0, 0] ];
+
+Bglobal = [ [B , MatZeros , Zeros , Zeros, Zeros, Zeros] , [MatZeros , B , Zeros, Zeros, Zeros, Zeros] , [Zeros',Zeros',0, 0, 0, 0] , [Zeros',Zeros',0, 0, 0, 0] , [Zeros', Zeros',0, 0, 0, 0] , [Zeros', Zeros',0, 0, 0, 0] ];
+
+real[int] Listelambdaloc(1); //to store the nev eigenvalue (nev = 1 ici)
+real[int,int] ListeVecteurproprelocS(Aglobal.n,1) ; //to store the nev eigenvector
+
+Mat Aloctemp = Aglobal;
+Mat Bloctemp = Bglobal;
+
+int kloc = EPSSolve(Aloctemp, Bloctemp, values=Listelambdaloc , array=ListeVecteurproprelocS, sparams= ssparamsfiltre); //Résolution du pb aux vp
+kloc=min(kloc,1);
+
+cout << "VP" << kloc << " = " << Listelambdaloc(0) << endl;
+Vh VecteurproprelocS1, VecteurproprelocS2;
+
+VecteurproprelocS1[](0:VecteurproprelocS1.n-1) = ListeVecteurproprelocS(0:VecteurproprelocS1.n-1,0);
+VecteurproprelocS2[](0:VecteurproprelocS2.n-1) = ListeVecteurproprelocS(VecteurproprelocS1.n:ListeVecteurproprelocS.n-3,0);
+
+Vh absVecteurproprelocS1 = abs(VecteurproprelocS1);
+if (VecteurproprelocS1[].max/absVecteurproprelocS1[].max<0.9)
+{
+    VecteurproprelocS1 = -VecteurproprelocS1;
+}
+Vh absVecteurproprelocS2 = abs(VecteurproprelocS2);
+if (VecteurproprelocS2[].max/absVecteurproprelocS2[].max<0.9)
+{
+    VecteurproprelocS2 = -VecteurproprelocS2;
+}
+
+// Renormalisation
+real normeL2VecteurproprelocS=sqrt(int2d(Th)(VecteurproprelocS1*VecteurproprelocS1 + VecteurproprelocS2*VecteurproprelocS2));
+VecteurproprelocS1[] = VecteurproprelocS1[]/normeL2VecteurproprelocS;
+VecteurproprelocS2[] = VecteurproprelocS2[]/normeL2VecteurproprelocS;
+///////////////////////////////////////////////////////////////////////
+
+if (plots){ plot(VecteurproprelocS1, fill=1, value=1, cmm="Premier vecteur propre", wait=1);}
+if (plots){ plot(VecteurproprelocS2, fill=1, value=1, cmm="Deuxieme vecteur propre", wait=1);}
+
+
+///////////////////////////////////////////////////////////////////////
+// Compute the error                                                //
+Vh e1=0, e2=0;
+Vh erreurH11 = 0, erreurH12 = 0;
+e1 = VecteurproprelocS1 - Psieps1;
+e2 = VecteurproprelocS2 - Psieps2;
+erreurH11 = dx(e1)*dx(e1) + dy(e1)*dy(e1) + e1*e1;
+erreurH12 = dx(e2)*dx(e2) + dy(e2)*dy(e2) + e2*e2;
+
+real eH11Omega = int2d(Th)(dx(e1)*dx(e1)+dy(e1)*dy(e1) + e1*e1)/ int2d(Th)(dx(Psieps1)*dx(Psieps1)+dy(Psieps1)*dy(Psieps1) + Psieps1*Psieps1);
+real eH12Omega = int2d(Th)(dx(e2)*dx(e2)+dy(e2)*dy(e2) + e2*e2)/ int2d(Th)(dx(Psieps2)*dx(Psieps2)+dy(Psieps2)*dy(Psieps2) + Psieps2*Psieps2);
+cout << "eH11_Omega = " << sqrt(eH11Omega) << endl;
+cout << "eH12_Omega = " << sqrt(eH12Omega) << endl;
+
+if (plots){ plot(e1, fill=1, value=1, cmm="Erreur e1", wait=1);}
+if (plots){ plot(erreurH11, fill=1, value=1, cmm="Erreur H1 e1", wait=1);}
+if (plots){ plot(e2, fill=1, value=1, cmm="Erreur e2", wait=1);}
+if (plots){ plot(erreurH12, fill=1, value=1, cmm="Erreur H1 e2", wait=1);}
+
+real eH11, eMax1 , nH11, nMax1;
+real eH11filtre, nH11filtre;
+
+real eH12, eMax2 , nH12, nMax2;
+real eH12filtre, nH12filtre;
+
+real eVP;
+
+real eH11Interieur, eMax1Interieur , nH11Interieur, nMax1Interieur;
+real eH11Interieurfiltre, nH11Interieurfiltre;
+
+real eH12Interieur, eMax2Interieur , nH12Interieur, nMax2Interieur;
+real eH12Interieurfiltre, nH12Interieurfiltre;
+
+eH11=int2d(Th)(dx(e1)*dx(e1)+dy(e1)*dy(e1) + e1*e1);
+nH11 = int2d(Th)(dx(Psieps1)*dx(Psieps1)+dy(Psieps1)*dy(Psieps1) + Psieps1*Psieps1);
+
+eH11filtre = int2d(Th)(FiltrePhi*(dx(e1)*dx(e1)+dy(e1)*dy(e1) + e1*e1));
+nH11filtre = int2d(Th)(FiltrePhi*(dx(Psieps1)*dx(Psieps1)+dy(Psieps1)*dy(Psieps1) + Psieps1*Psieps1));
+
+eMax1=e1[].max;
+nMax1=Psieps1[].max;
+
+eH12=int2d(Th)(dx(e2)*dx(e2)+dy(e2)*dy(e2) + e2*e2);
+nH12 = int2d(Th)(dx(Psieps2)*dx(Psieps2)+dy(Psieps2)*dy(Psieps2) + Psieps2*Psieps2);
+
+eH12filtre = int2d(Th)(FiltrePhi*(dx(e2)*dx(e2)+dy(e2)*dy(e2) + e2*e2));
+nH12filtre = int2d(Th)(FiltrePhi*(dx(Psieps2)*dx(Psieps2)+dy(Psieps2)*dy(Psieps2) + Psieps2*Psieps2));
+
+eMax2=e2[].max;
+nMax2=Psieps2[].max;
+
+// Taking square roots, determining the relative errors
+eH11 = sqrt(eH11/nH11);
+eH11filtre = sqrt(eH11filtre/nH11filtre);
+eMax1=eMax1/nMax1;
+
+eH12 = sqrt(eH12/nH12);
+eH12filtre = sqrt(eH12filtre/nH12filtre);
+eMax2=eMax2/nMax2;
+
+real eH1 = sqrt(eH11^2 + eH12^2)/sqrt(2);
+real eH1filtre = sqrt(eH11filtre^2 + eH12filtre^2)/sqrt(2);
+real eMax = max(eMax1,eMax2);
+
+cout << "eH1_Omega = " << eH1 << endl;
+cout << "eH1filtre_Omega = " << eH1filtre << endl;
+
+for (int k=0; k<Ntri; k++) {
+
+    vk[][k]=1;
+    
+    // Defining the vertices of the ideal oversampling patch (possibly lying partially outside the global domain)
+    real[int,int] Kx(3,2); //save coordinates of the vertices belonging to K
+    for(int kk=0; kk<3; kk++) {
+        Kx(kk,0) = TH[k][kk].x;
+        Kx(kk,1) = TH[k][kk].y;
+    }
+    real xCL = (Kx(:,0).min); //we take a small margin around the vertices of S as computed above
+
+    real xCR = (Kx(:,0).max);
+
+    real yCL = (Kx(:,1).min);
+
+    real yCR = (Kx(:,1).max);
+
+
+    int[int] n2oFine;
+    mesh Kh=trunc(Th, vk>0.5, split=1, new2old=n2oFine);
+    fespace VK(Kh,P1);
+    int[int] loc2globFine = restrict(VK, Vh, n2oFine);
+
+    if ((xCL!=0) && (xCR !=1) && (yCL!=0) && (yCR !=1) ){
+        //plot(Kh, vk, fill=1, cmm="Mesh element and oversampling patch", wait=1);
+        
+        // For VecteurproprelocS1
+        VK VecteurproprelocK1=0;
+        VecteurproprelocK1[] = VecteurproprelocS1[](loc2globFine);
+
+        VK eK1=0;
+        VK PsiepsK1=0;
+        PsiepsK1[] = Psieps1[](loc2globFine);
+
+        eK1[] = PsiepsK1[];
+        eK1[] = eK1[] - VecteurproprelocK1[];
+
+        VK erreurH1K1 = 0;
+        erreurH1K1 = dx(eK1)*dx(eK1) + dy(eK1)*dy(eK1) + eK1*eK1;
+
+        eH11Interieur += int2d(Kh)(dx(eK1)*dx(eK1)+dy(eK1)*dy(eK1) + eK1*eK1);
+        nH11Interieur += int2d(Kh)(dx(PsiepsK1)*dx(PsiepsK1)+dy(PsiepsK1)*dy(PsiepsK1) + PsiepsK1*PsiepsK1);
+
+        eH11Interieurfiltre += int2d(Kh)(FiltrePhi*(dx(eK1)*dx(eK1)+dy(eK1)*dy(eK1) + eK1*eK1));
+        nH11Interieurfiltre += int2d(Kh)(FiltrePhi*(dx(PsiepsK1)*dx(PsiepsK1)+dy(PsiepsK1)*dy(PsiepsK1) + PsiepsK1*PsiepsK1));
+
+        eMax1Interieur =max(eK1[].max,eMax1Interieur);
+        nMax1Interieur =max(PsiepsK1[].max,nMax1Interieur);
+
+        // For VecteurproprelocS2
+        VK VecteurproprelocK2=0;
+        VecteurproprelocK2[] = VecteurproprelocS2[](loc2globFine);
+
+        VK eK2=0;
+        VK PsiepsK2=0;
+        PsiepsK2[] = Psieps2[](loc2globFine);
+
+        eK2[] = PsiepsK2[];
+        eK2[] = eK2[] - VecteurproprelocK2[];
+
+        VK erreurH1K2 = 0;
+        erreurH1K2 = dx(eK2)*dx(eK2) + dy(eK2)*dy(eK2) + eK2*eK2;
+
+        eH12Interieur += int2d(Kh)(dx(eK2)*dx(eK2)+dy(eK2)*dy(eK2) + eK2*eK2);
+        nH12Interieur += int2d(Kh)(dx(PsiepsK2)*dx(PsiepsK2)+dy(PsiepsK2)*dy(PsiepsK2) + PsiepsK2*PsiepsK2);
+
+        eH12Interieurfiltre += int2d(Kh)(FiltrePhi*(dx(eK2)*dx(eK2)+dy(eK2)*dy(eK2) + eK2*eK2));
+        nH12Interieurfiltre += int2d(Kh)(FiltrePhi*(dx(PsiepsK2)*dx(PsiepsK2)+dy(PsiepsK2)*dy(PsiepsK2) + PsiepsK2*PsiepsK2));
+
+        eMax2Interieur =max(eK2[].max,eMax2Interieur);
+        nMax2Interieur =max(PsiepsK2[].max,nMax2Interieur);
+    }
+    vk[][k]=0;       
+}
+real eH1Interieur, eMaxInterieur, eH1Interieurfiltre; 
+
+eH1Interieur = sqrt(eH11Interieur/nH11Interieur + eH12Interieur/nH12Interieur)/sqrt(2);
+eH1Interieurfiltre = sqrt(eH11Interieurfiltre/nH11Interieurfiltre + eH12Interieurfiltre/nH12Interieurfiltre)/sqrt(2);
+eMaxInterieur = max(eMax1Interieur,eMax2Interieur)/max(nMax1Interieur,nMax2Interieur);
+
+cout << "eH1Interieur = " << eH1Interieur << endl;
+
+eVP = abs(Listelambdaloc(0)- lambdaPsi)/(lambdaPsi);
+cout << "eVP = " << eVP << endl;
+
+// Writing errors on K to an external file
+string errname = "Results/erreur_Cellule_unite_psi_phi_filtre" + "_Coeffs_" + NumCoeffDiff + ".txt";
+ofstream ff(errname, append);
+ff  << ParameterDescription << "n\t" << n << "\t"
+    << "N\t" << Ndiscr << "\t"
+    << "NumVP\t" << NumberEigenValue << "\t"
+    << "osCoef\t" << osCoef << "\t"
+    << endl;
+
+ff  << "\t"
+    << "eps\t" << eps << "\t"
+    << "eH1\t" << eH1 << "\t"
+    << "eH1filtre\t" << eH1filtre << "\t"
+    << "eMax\t" << eMax << "\t"
+    << "eH1Interieur\t" << eH1Interieur << "\t"
+    << "eH1Interieurfiltre\t" << eH1Interieurfiltre << "\t"
+    << "eMaxInterieur\t" << eMaxInterieur << "\t"
+    << "VP1\t" << eVP << "\t"
+    << endl;
+
+ff<<endl;
+
+printmessage("////////////////////////////////////////////////////////////////");

@@ -1,0 +1,100 @@
+// Compute reference solution for MsFEM tests
+// run with   mpirun -np 1 FreeFem++-mpi -wg main_REF.edp -v 0
+
+
+cout <<""<<endl;
+
+string nameMethod = "REF";
+
+include "init.edp" // defines bilinear form, RHS, global P1 space Vh on the fine mesh
+
+printmessage("Debut de la methode " + nameMethod + " avec les parametres " + parametersREF);
+
+///////////////////////////////////////////////////////////////////////
+// Reference solution and error computation                          //
+///////////////////////////////////////////////////////////////////////
+
+// Load or compute reference solution
+//tic = clock();
+tic = clock();
+
+real lambdaref;
+
+// Problem
+varf opref ([uref1,uref2], [vh1,vh2])  
+    = int2d(Th)(eps^2*a(Aeps1,uref1,vh1))
+    + int2d(Th)(eps^2*a(Aeps2,uref2,vh2))
+    + int2d(Th)((sigmaeps1*uref1 + sigmaeps2*uref2)*vh1
+          +(sigmaeps3*uref1 + sigmaeps4*uref2)*vh2) 
+    + on(1, 2, 3, 4, uref1=0)
+    + on(1, 2, 3, 4, uref2=0)
+    ;
+
+varf bref ([uref1,uref2], [vh1,vh2]) = int2d(Th)(uref1*vh1 + uref2*vh2); //no boundary condition
+
+matrix<real> Aref = opref(VhVh, VhVh, factorize=1); 
+matrix<real> Bref = bref(VhVh, VhVh, solver=CG, eps=1e-20);
+
+Mat Areftemp = Aref;
+Mat Breftemp = Bref;
+
+real[int] Listelambdaref(NumberEigenValue); //to store the nev eigenvalue (nev = 1 ici)
+VhVh[int] [ListeVecteurpropreref1,ListeVecteurpropreref2](NumberEigenValue); //to store the nev eigenvector
+
+
+int kref = EPSSolve(Areftemp, Breftemp, vectors = ListeVecteurpropreref1, values  = Listelambdaref, sparams = ssparams); //Résolution du pb aux vp
+kref=min(kref,NumberEigenValue);
+
+toc = clock();
+
+lambdaref = Listelambdaref[NumberEigenValue-1]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+
+Vh Vecteurpropreref1, Vecteurpropreref2;
+Vecteurpropreref1 = ListeVecteurpropreref1[NumberEigenValue-1];
+Vecteurpropreref2 = ListeVecteurpropreref2[NumberEigenValue-1];
+
+
+Vh absVecteurpropreref1 = abs(Vecteurpropreref1);
+if (Vecteurpropreref1[].max/absVecteurpropreref1[].max<0.9)
+{
+    Vecteurpropreref1 = -Vecteurpropreref1;
+}
+Vh absVecteurpropreref2 = abs(Vecteurpropreref2);
+if (Vecteurpropreref2[].max/absVecteurpropreref2[].max<0.9)
+{
+    Vecteurpropreref2 = -Vecteurpropreref2;
+}
+
+// Renormalisation
+real normeL2ref=sqrt(int2d(Th)(Vecteurpropreref1*Vecteurpropreref1 + Vecteurpropreref2*Vecteurpropreref2));
+Vecteurpropreref1[] = Vecteurpropreref1[]/normeL2ref;
+Vecteurpropreref2[] = Vecteurpropreref2[]/normeL2ref;
+
+//toc = clock();
+
+printmessage("Temps de calcul de la solution de reference : " << toc - tic << " secondes ");
+printmessage("lambda_" << nameMethod << " = " << lambdaref);
+
+if (plots) plot(Vecteurpropreref1,wait=1,value=1,fill=1, cmm="Solution de reference Energie 1");
+if (plots) plot(Vecteurpropreref2,wait=1,value=1,fill=1, cmm="Solution de reference Energie 2");
+
+{
+    string solname = "./Solutions_reference/sol_energie1_" + nameMethod + parametersREF + ".txt";
+    ofstream ff(solname);
+    ff << Vecteurpropreref1[] << endl;
+    ff << endl;
+}
+{
+    string solname = "./Solutions_reference/sol_energie2_" + nameMethod + parametersREF + ".txt";
+    ofstream ff(solname);
+    ff << Vecteurpropreref2[] << endl;
+    ff << endl;
+}
+
+{
+    string solname2 = "./Solutions_reference/VP_" + nameMethod + parametersREF + ".txt";
+    ofstream ff(solname2);
+    ff << lambdaref << endl;
+    ff << endl;
+}
+printmessage("////////////////////////////////////////////////////////////////");

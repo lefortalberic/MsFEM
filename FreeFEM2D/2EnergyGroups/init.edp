@@ -1,0 +1,216 @@
+
+load "PETSc"
+//load "SLEPc"
+
+// NumCoeffDiff :
+// 1 : Coeffs droits
+// 2 : Coeffs penches
+// 3 : Coeffs 1D
+// 4 : Coeffs Bump functions
+// 5 : Coeffs non periodiques
+// 6 : Coeffs penches non rationnels
+// 7 : Coeffs squares
+// 8 : Coeffs squares tournés
+// 9 : Coeffs 1D tournés 30degres
+// 10 : Coeffs quasi-periodiques
+// 11 : Coeffs sudoku pseudo-aléatoire
+// 12 : Coeffs penches, A et sigma alignes X-2Y
+// 13 : Coeffs 1D tournés 10degres
+// 14 : Coeffs 1D tournés 20degres
+// 15 : Coeffs Quasi periodiques 2
+// 16 : Coeffs Quasi periodiques 3
+// 17 : Coeffs Quasi periodiques 2 pour A, Coeffs penches 2 pour sigma
+// 18 : Coeffs penches 2 pour A, Quasi periodiques 2 pour sigma
+// 19 : Coeffs penches tests
+// 20 : Coeffs 1D tournés 45degres
+// 21 : Coeffs 1D tournés 5degres
+// 22 : Coeffs 1D tournés 6.84degres
+// 23 : Coeffs penches, A et sigma alignes X+2Y
+
+// Signe moins pour recombiner les coefficients (périodiques) en entrée. exemple : -1 pour les coefficients droits recombinés
+
+bool plots = 0; // 1 if plots are used, 0 otherwise
+bool debug = 0;
+bool debugprecis = 0;
+bool ErreurSurK = 0;
+
+bool PriseEnCompteBord = 1;
+bool CentrePatchCarre = 0;
+bool recombinebool = 0; // 1 if spatial recombination is used, 0 otherwise
+
+int CoeffHomogenizedbool = 0; // 1 if the homogenized coefficients are computed, 0 otherwise
+bool CompareMsFEMMsFEMrecombined = 0; // 0 if the MsFEM solution is compared to the reference solution, 1 if the MsFEM solution is compared to the MsFEM solution with recombined coefficients
+bool SymetrieBool = 0; // 1 if the symmetry coefficient is computed, 0 otherwise
+///////////////////////////////////////////////////////////////////////
+// Declaring and reading external parameters                         //
+///////////////////////////////////////////////////////////////////////
+
+// Outfile stream for process output
+ofstream ffLog("log_msfem.txt", append);
+
+include "tools.edp"
+
+real tic = clock();
+// Parameters defining the domain
+real L, Lx, Ly;
+// Parameters defining the fine mesh
+int Ndiscr, Nx, Ny;
+// Parameters defining the coarse mesh
+int n, nx, ny;
+// Parameters defining the PDE
+real eps;
+//
+int NumberEigenValue; // numero of eigenvalues to compute
+//
+int NumCoeffDiff; // numero of the diffusion coefficient to use
+//
+real osCoef; // Coefficient for the oversampling patch size  (osCoef = 1 for the minimal patch size)
+
+// Reading parameters from external file "parameters.txt"
+{
+	ifstream f("parameters.txt");
+	string read;
+	f >> read >> L;        Lx=L; Ly=L;
+	f >> read >> Ndiscr;   Nx=Ndiscr; Ny=Ndiscr;
+	f >> read >> n;		   nx=n; ny=n;
+  f >> read >> eps;
+  f >> read >> NumCoeffDiff;
+  f >> read >> NumberEigenValue;
+  f >> read >> osCoef;
+}
+
+string parametersMsFEM = "_N_" + Ndiscr + "_n_" + nx + "_eps_" + eps + "_NumVP_" + NumberEigenValue + "_osCoef_" + osCoef + "_NumCoeffDiff_" + NumCoeffDiff; 
+string parametersREF = "_N_" + Ndiscr + "_eps_" + eps + "_NumVP_" + NumberEigenValue + "_NumCoeffDiff_" + NumCoeffDiff; 
+
+// Write starting message for the method
+printmessage("////////////////////////////////////////////////////////////////")
+if (nameMethod == "REF") {
+  printmessage("// Calcul de la solution de reference avec les parametres " + parametersREF);
+} else {
+  printmessage("// Debut de la methode " + nameMethod + " avec les parametres " + parametersMsFEM);
+}
+
+
+real hx=Lx/Nx, hy=Ly/Ny; // Fine mesh Th
+real Hx=Lx/nx, Hy=Ly/ny; // Coarse mesh Th
+mesh Th=square(Nx,Ny,[Lx*x,Ly*y]); //fine mesh
+fespace Vh(Th,P1); //fine global FE space
+fespace VhVh(Th,[P1,P1]); //fine global FE space
+mesh TH=square(nx,ny,[Lx*x,Ly*y]); //coarse mesh
+fespace VH(TH,P1); //coarse global FE space
+fespace VHVH(TH,[P1,P1]);
+int Ntri = TH.nt;
+
+///////////////////////////////////////////////////////////////////////
+// Define internal data structures                                   //
+///////////////////////////////////////////////////////////////////////
+
+int nnz=0, nnzmax=9*Ntri;
+int[int] Imat(nnzmax); //
+int[int] Jmat(nnzmax);
+real[int] Amat1(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Amat2(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Sigmamat11(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Sigmamat12(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Sigmamat21(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Sigmamat22(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Bmat1(nnzmax); //matrix contributions B[Imat[k],Jmat[k]] = Bmat[k], summing all contributions
+real[int] Bmat2(nnzmax); //matrix contributions B[Imat[k],Jmat[k]] = Bmat[k], summing all contributions
+fespace VH0(TH,P0);
+VH0 vk=0; // dummy function to truncate the mesh
+vk[][0]=1; // vk[] = array of coefficients of vk in the FE basis
+
+VH0 xb,yb;
+xb=x; yb=y; //interpolate and stock the coordinates of the barycentre for each triangle
+
+mesh Kstore=trunc(Th, vk>0.5, split=1);
+vk[][0]=0;
+fespace Vstore(Kstore,P1);
+fespace VstoreVstore(Kstore,[P1,P1]);
+Vstore[int] phiEps11(3*Ntri); //basis function matrix triangle by triangle
+Vstore[int] phiEps12(3*Ntri); //basis function matrix triangle by triangle
+for (int i=0; i<phiEps11.n; i++ ) phiEps11[i][]=0;
+for (int i=0; i<phiEps12.n; i++ ) phiEps12[i][]=0;
+
+Vstore[int] phiEps21(3*Ntri); //basis function matrix triangle by triangle
+Vstore[int] phiEps22(3*Ntri); //basis function matrix triangle by triangle
+for (int i=0; i<phiEps21.n; i++ ) phiEps21[i][]=0;
+for (int i=0; i<phiEps22.n; i++ ) phiEps22[i][]=0;
+
+
+macro storeIndex(tri,vertex) (3*tri+vertex)//EOM
+
+
+////////// Diffusion coefficient //////////
+include "Coefficients.edp"
+
+//////////////////////////////////////////
+//func FiltrePhi= (1-x)*(1-x)*(1-x)*(1-x)*x*x*x*x*(1-y)*(1-y)*(1-y)*(1-y)*y*y*y*y*396900;
+//func FiltrePhi= (1-x)*(1-x)*x*x*(1-y)*(1-y)*y*y*900;
+func FiltrePhi= (1-x)*x*(1-y)*y*36;
+//func FiltrePhi= sqrt((1-x)*x*(1-y)*y)*6.48456;
+//func FiltrePhi= sqrt(sqrt((1-x)*x*(1-y)*y))*2.6181;
+
+Vh Phiplot = FiltrePhi(x,y);
+if (debug) plot(Phiplot, fill=1, value=1, cmm="FiltrePhi", wait=1);
+
+macro a(dif,u,v) (dif*dx(u)*dx(v) + dif*dy(u)*dy(v))//EOM
+// Plot diffusion coefficient
+Vh a1plot=Aeps1(x,y);
+Vh a2plot=Aeps2(x,y);
+Vh sigma1plot = sigmaeps1(x,y);
+Vh sigma2plot = sigmaeps2(x,y);
+Vh sigma3plot = sigmaeps3(x,y);
+Vh sigma4plot = sigmaeps4(x,y);
+
+if (plots) plot(a1plot, value=1, cmm="Diffusion1 coefficient", wait=1);
+if (plots) plot(a2plot, value=1, cmm="Diffusion2 coefficient", wait=1);
+if (plots) plot(sigma1plot, value=1, cmm="Sigma1 coefficient", wait=1);
+if (plots) plot(sigma2plot, value=1, cmm="Sigma2 coefficient", wait=1);
+if (plots) plot(sigma3plot, value=1, cmm="Sigma3 coefficient", wait=1);
+if (plots) plot(sigma4plot, value=1, cmm="Sigma4 coefficient", wait=1);
+
+/*
+Vh aplot2=AepsrecombineFunction(x,y);
+if (plots && recombinebool) plot(aplot2, value=1, cmm="Diffusion coefficient recombined", wait=1);
+*/
+//cout <<"TESTx vaut " << Aepsrecombine(0.45,0.53)[0] << " FIN TEST" << endl;
+//cout <<"TESTy vaut " << Aepsrecombine(0.45,0.53)[1] << " FIN TEST" << endl;
+
+string ssparams =            // Parameters for the distributed EigenValue solver
+  " -eps_nev " + NumberEigenValue       + // Number of eigenvalues
+  " -eps_type krylovschur" +
+  //" -eps_target "+ 0   + // Shift value
+  " -st_type sinvert "     
+  //" -eps_view"             +
+  //" -eps_view_values"             +
+  //" -eps_gen_hermitian"      // The problem is symmetric
+  ;
+  string ssparamsfiltre =            // Parameters for the distributed EigenValue solver
+  " -eps_nev " + NumberEigenValue       + // Number of eigenvalues
+  " -eps_type krylovschur" +
+  //" -eps_target "+ 0   + // Shift value
+  " -st_type sinvert" +
+  " -st_pc_factor_mat_solver_type mumps "  
+  //" -eps_view"             +
+  //" -eps_view_values"             +
+  //" -eps_gen_hermitian"      // The problem is symmetric
+  ;
+real toc = clock();
+
+//initialisation des variables pour les calculs d'erreurs
+real ErrrelativeH1PhiPsiK, ErrrelativeH1ChiPhiChiPsiK, ErrrelativeH1PhiChiPhiPsiChiPsiK;
+real ErrrelativeL2PhiPsiK, ErrrelativeL2ChiPhiChiPsiK, ErrrelativeL2PhiChiPhiPsiChiPsiK;
+real ErrrelativemaxK, DistanceaN, ErrrelativemaxcarreAepsK, ErrrelativemaxVPK, ErrrelativemoyenneVPK =0 ;
+real nmaxPsicarre = 0, emaxPhiPsicarre = 0;
+real eH1ChiPhiChiPsi = 0, eH1PhiChiPhiPsiChiPsi = 0;
+real eL2ChiPhiChiPsi = 0, eL2PhiChiPhiPsiChiPsi = 0;
+real nH1ChiPsi = 0, nH1PsiChiPsi = 0;
+real nL2ChiPsi = 0, nL2PsiChiPsi = 0;
+
+real SymetrieCstx = 0; real SymetrieCsty = 0; real SymetrieCstxDenominateur = 0; real SymetrieCstyDenominateur = 0;
+Vh Psieps1; Vh Psieps2; Vh Psiepsadjoint1; Vh Psiepsadjoint2; real lambdaPsi = 0; real lambdaPsiadjoint = 0;
+real brokennormH1 = 0, emaxPhiPsi = 0, nmaxPsi = 0;
+real nH1Psi = 0, eH1PhiPsi = 0, nL2Psi = 0, eL2PhiPsi = 0;
+
+printmessage("Temps d'initialisation du maillage, et de l'espace de discretisation : " << toc - tic << " secondes ");

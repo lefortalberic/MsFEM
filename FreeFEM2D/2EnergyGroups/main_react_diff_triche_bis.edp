@@ -1,0 +1,547 @@
+// react_diff_P1.edp
+//
+// A FreeFEM++ script that shows the usual, intrusive MsFEM approach on a simple diffusion problem
+//
+// Note that this implementation is possible mainly due to the following in-depth functionality of FreeFEM++:
+// - VK(k,i) gives the global degree of freedom of the ith local DOF in the kth triangle of the mesh
+// Meme méthode que main_react_triche mais avec la construction des fonctions de forme par l'idee de Frederic
+
+//mpirun -np 1 FreeFem++-mpi -wg main_react_diff_triche_bis.edp -v 0
+string nameMethod = "triche_bis";
+
+include "init.edp"
+
+real[int] Amat11(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Amat12(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Amat21(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Amat22(nnzmax); //matrix contributions A[Imat[k],Jmat[k]] = Amat[k], summing all contributions
+real[int] Bmat11(nnzmax); //matrix contributions B[Imat[k],Jmat[k]] = Bmat[k], summing all contributions
+real[int] Bmat12(nnzmax); //matrix contributions B[Imat[k],Jmat[k]] = Bmat[k], summing all contributions
+real[int] Bmat21(nnzmax); //matrix contributions B[Imat[k],Jmat[k]] = Bmat[k], summing all contributions
+real[int] Bmat22(nnzmax); //matrix contributions B[Imat[k],Jmat[k]] = Bmat[k], summing all contributions
+///////////////////////////////////////////////////////////////////////
+// Offline stage                                                     //
+// - Computation of spectral function Psi_triche                     //
+// - Computation of multiscale basis functions                       //
+// - Computation of stiffness matrix                                 //
+//(- The discrete right-hand side is also computed here)             //
+///////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////
+// - Computation of spectral function Psi_triche                     //
+///////////////////////////////////////////////////////////////////////
+
+include "Psi_triche.edp"
+
+///////////////////////////////////////////////////////////////////////
+// - Computation of multiscale basis functions                       //
+///////////////////////////////////////////////////////////////////////
+
+Psieps1 = VecteurproprePsi1(fmod(x/eps,1), fmod(y/eps,1)) ;
+Psieps2 = VecteurproprePsi2(fmod(x/eps,1), fmod(y/eps,1)) ;
+Psiepsadjoint1 = VecteurproprePsiadjoint1(fmod(x/eps,1), fmod(y/eps,1)) ;
+Psiepsadjoint2 = VecteurproprePsiadjoint2(fmod(x/eps,1), fmod(y/eps,1)) ;
+
+if (debug) plot(Psieps1,wait=1,value=1,fill=1, cmm="Psi 1 en x/eps sur Omega");
+if (debug) plot(Psieps2,wait=1,value=1,fill=1, cmm="Psi 2 en x/eps sur Omega");
+if (debug) plot(Psiepsadjoint1,wait=1,value=1,fill=1, cmm="Psiadjoint 1 en x/eps sur Omega");
+if (debug) plot(Psiepsadjoint2,wait=1,value=1,fill=1, cmm="Psiadjoint 2 en x/eps sur Omega");
+
+
+printmessage("Construction des fonctions de forme ");
+tic = clock();
+
+for (int k=0; k<Ntri; k++) {
+	vk[][k]=1;
+	mesh Kh=trunc(Th, vk>1e-10, split=1); //mesh for the fine-scale resolution of MsFEM functions   
+	fespace VK(Kh,P1);
+	fespace VKVK(Kh,[P1,P1]);
+	//VKVK[int] phi1(3); //storage of local basis function contributions in the offline loop
+	//VKVK[int] phi2(3); //storage of local basis function contributions in the offline loop
+	//VK[int] phi(3); //storage of local basis function contributions in the offline loop
+
+	// Resolution of local problems
+	varf defMS([uh1,uh2],[vh1,vh2]) = 
+
+	  int2d(Kh)(eps^2*Psieps1*Psiepsadjoint1*a(Aeps1,uh1,vh1)) // D_eps
+	+ int2d(Kh)(eps^2*Psieps2*Psiepsadjoint2*a(Aeps2,uh2,vh2))
+
+	+ int2d(Kh)(Psieps2*Psiepsadjoint1*sigmaeps2*(uh2 - uh1)*vh1) //Q_tilde_eps
+	+ int2d(Kh)(Psieps1*Psiepsadjoint2*sigmaeps3*(uh1 - uh2)*vh2)
+
+	+ int2d(Kh)(eps*Aeps1*(Psieps1*dx(Psiepsadjoint1)-Psiepsadjoint1*dx(Psieps1))*dx(uh1)*vh1) //J_eps
+	+ int2d(Kh)(eps*Aeps1*(Psieps1*dy(Psiepsadjoint1)-Psiepsadjoint1*dy(Psieps1))*dy(uh1)*vh1)
+	+ int2d(Kh)(eps*Aeps2*(Psieps2*dx(Psiepsadjoint2)-Psiepsadjoint2*dx(Psieps2))*dx(uh2)*vh2)
+	+ int2d(Kh)(eps*Aeps2*(Psieps2*dy(Psiepsadjoint2)-Psiepsadjoint2*dy(Psieps2))*dy(uh2)*vh2)
+	
+	+ int1d(Kh)(tgv*uh1*vh1 + tgv*uh2*vh2); // Dirichlet boundary condition;
+	
+	matrix Aloc=defMS(VKVK,VKVK);
+	set(Aloc, solver=UMFPACK);
+	VH bc=0; //will hold the boundary condition for local problems
+
+	VK[int] Phi11(3) ; VK[int] Phi12(3); //storage of local basis function contributions in the offline loop;
+	VK[int] Phi21(3) ; VK[int] Phi22(3); //storage of local basis function contributions in the offline loop;	
+	for (int i=0; i<3; i++) {
+
+		VKVK [phiC11,phiC12]; //storage of local basis function contributions in the offline loop
+        VKVK [phiC21,phiC22]; //storage of local basis function contributions in the offline loop
+		//VK phi1; //storage of local basis function contributions in the offline loop
+		//VK phi2; //storage of local basis function contributions in the offline loop
+		
+		int dofi = VH(k,i); // the index in VH associated to vertex i of triangle k
+		bc[][dofi] = 1;
+		varf rhsloc1([uh1,uh2],[vh1,vh2]) = int1d(Kh)(tgv*bc*vh1);
+        varf rhsloc2([uh1,uh2],[vh1,vh2]) = int1d(Kh)(tgv*bc*vh2);
+		real[int] Bloc1 = rhsloc1(0,VKVK);
+        real[int] Bloc2 = rhsloc2(0,VKVK);
+		phiC11[] = Aloc^-1*Bloc1;
+        phiC21[] = Aloc^-1*Bloc2;
+		bc[][dofi]=0;
+
+        if (debug){
+            plot(phiC11,wait=1,value=1,fill=1, cmm="fonction forme Chi 1");
+			plot(phiC12,wait=1,value=1,fill=1, cmm="fonction forme Chi 2");
+            plot(phiC21,wait=1,value=1,fill=1, cmm="fonction forme Chi 1");
+            plot(phiC22,wait=1,value=1,fill=1, cmm="fonction forme Chi 2");
+        }
+		int storei = 0;
+		storei = storeIndex(k,i);
+
+		VK phiC11Psieps1 = phiC11*Psieps1;
+        VK phiC12Psieps2 = phiC12*Psieps2;
+        VK phiC21Psieps1 = phiC21*Psieps1;
+        VK phiC22Psieps2 = phiC22*Psieps2;
+
+		Phi11[i][] = phiC11Psieps1[];
+		Phi22[i][] = phiC22Psieps2[];
+		Phi12[i][] = phiC12Psieps2[];
+		Phi21[i][] = phiC21Psieps1[];
+
+		if (debug){
+			plot(Phi11[i],wait=1,value=1,fill=1, cmm="fonction forme Chi Psi 1");	
+			plot(Phi22[i],wait=1,value=1,fill=1, cmm="fonction forme Chi Psi 2");		
+		}
+		phiEps11[storei][] = Phi11[i][]; // save basis functions for multiscale reconstruction below
+		phiEps12[storei][] = Phi12[i][]; // save basis functions for multiscale reconstruction below
+		phiEps21[storei][] = Phi21[i][]; // save basis functions for multiscale reconstruction below
+		phiEps22[storei][] = Phi22[i][]; // save basis functions for multiscale reconstruction below
+	}
+	// Computation of matrix elements
+	for (int j=0; j<3; j++)
+	{ //loop over all corners for matrix contributions on K
+		for (int i=0; i<3; i++) {
+			// int ii = contr[i]; // seems superfluous ???
+			// Find global DOF index for trial functions j and test function i,
+			// compute matrix contributions,
+			// save these in Imat[nnz], Jmat[nnz] and Mmat[nnz]
+            //if (recombinebool){
+            //    Imat[nnz] = VH(recombine(k,Ntri),i);
+			//    Jmat[nnz] = VH(recombine(k,Ntri),j);
+            //} else {
+			Imat[nnz] = VH(k,i);
+			Jmat[nnz] = VH(k,j);
+            //}
+			Amat11[nnz] = int2d(Kh)(eps^2*a(Aeps1, Phi11[i], Phi11[j])) + int2d(Kh)(eps^2*a(Aeps2, Phi12[i], Phi12[j]));
+            Amat12[nnz] = int2d(Kh)(eps^2*a(Aeps1, Phi11[i], Phi21[j])) + int2d(Kh)(eps^2*a(Aeps2, Phi12[i], Phi22[j]));
+            Amat21[nnz] = int2d(Kh)(eps^2*a(Aeps2, Phi22[i], Phi12[j])) + int2d(Kh)(eps^2*a(Aeps1, Phi21[i], Phi11[j]));
+			Amat22[nnz] = int2d(Kh)(eps^2*a(Aeps2, Phi22[i], Phi22[j])) + int2d(Kh)(eps^2*a(Aeps1, Phi21[i], Phi21[j]));
+
+			Sigmamat11[nnz] = int2d(Kh)(sigmaeps1*Phi11[i]*Phi11[j]) + int2d(Kh)(sigmaeps2*Phi11[i]*Phi12[j])
+                            + int2d(Kh)(sigmaeps3*Phi12[i]*Phi11[j]) + int2d(Kh)(sigmaeps4*Phi12[i]*Phi12[j]);
+
+            Sigmamat12[nnz] = int2d(Kh)(sigmaeps1*Phi11[i]*Phi21[j]) + int2d(Kh)(sigmaeps2*Phi11[i]*Phi22[j])
+                            + int2d(Kh)(sigmaeps3*Phi12[i]*Phi21[j]) + int2d(Kh)(sigmaeps4*Phi12[i]*Phi22[j]);
+
+            Sigmamat21[nnz] = int2d(Kh)(sigmaeps1*Phi21[i]*Phi11[j]) + int2d(Kh)(sigmaeps2*Phi21[i]*Phi12[j])
+                            + int2d(Kh)(sigmaeps3*Phi22[i]*Phi11[j]) + int2d(Kh)(sigmaeps4*Phi22[i]*Phi12[j]);
+
+            Sigmamat22[nnz] = int2d(Kh)(sigmaeps1*Phi21[i]*Phi21[j]) + int2d(Kh)(sigmaeps2*Phi21[i]*Phi22[j])
+                            + int2d(Kh)(sigmaeps3*Phi22[i]*Phi21[j]) + int2d(Kh)(sigmaeps4*Phi22[i]*Phi22[j]);
+
+            Bmat11[nnz] = int2d(Kh)(Phi11[i]*Phi11[j]) + int2d(Kh)(Phi12[i]*Phi12[j]);
+            Bmat21[nnz] = int2d(Kh)(Phi21[i]*Phi11[j]) + int2d(Kh)(Phi22[i]*Phi12[j]);
+            Bmat12[nnz] = int2d(Kh)(Phi11[i]*Phi21[j]) + int2d(Kh)(Phi12[i]*Phi22[j]);
+			Bmat22[nnz] = int2d(Kh)(Phi22[i]*Phi22[j]) + int2d(Kh)(Phi21[i]*Phi21[j]);
+			nnz++;
+		}
+	}
+	vk[][k]=0;
+}
+toc = clock();
+
+printmessage("Temps de construction des fonctions de forme : " << toc - tic << " secondes ");
+
+///////////////////////////////////////////////////////////////////////
+// Online stage                                                      //
+///////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////
+// Online stage                                                      //
+///////////////////////////////////////////////////////////////////////
+
+tic = clock();
+
+// Define global matrix and add boundary conditions to the system by penalization
+matrix Amsfem11 = [Imat(0:nnz-1), Jmat(0:nnz-1), Amat11(0:nnz-1)];
+matrix Amsfem12 = [Imat(0:nnz-1), Jmat(0:nnz-1), Amat12(0:nnz-1)];
+matrix Amsfem21 = [Imat(0:nnz-1), Jmat(0:nnz-1), Amat21(0:nnz-1)];
+matrix Amsfem22 = [Imat(0:nnz-1), Jmat(0:nnz-1), Amat22(0:nnz-1)];
+matrix Bmsfem11 = [Imat(0:nnz-1), Jmat(0:nnz-1), Bmat11(0:nnz-1)];
+matrix Bmsfem12 = [Imat(0:nnz-1), Jmat(0:nnz-1), Bmat12(0:nnz-1)];
+matrix Bmsfem21 = [Imat(0:nnz-1), Jmat(0:nnz-1), Bmat21(0:nnz-1)];
+matrix Bmsfem22 = [Imat(0:nnz-1), Jmat(0:nnz-1), Bmat22(0:nnz-1)];
+matrix Sigmamsfem11 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat11(0:nnz-1)];
+matrix Sigmamsfem12 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat12(0:nnz-1)];
+matrix Sigmamsfem21 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat21(0:nnz-1)];
+matrix Sigmamsfem22 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat22(0:nnz-1)];
+matrix Zeros((Amsfem11.n), (Amsfem11.n)) ;
+Zeros=Zeros*0;
+
+varf boundarycondition(u,v) = int1d(TH)(tgv*u*v);
+matrix Abc = boundarycondition(VH,VH);
+
+matrix Aglob(2*(Amsfem11.n), 2*(Amsfem11.n));
+matrix Bglob(2*(Amsfem11.n), 2*(Amsfem11.n));
+
+matrix Aglob11 = Amsfem11 + Sigmamsfem11 + Abc;
+matrix Aglob22 = Amsfem22 + Sigmamsfem22 + Abc;
+matrix Aglob12 = Sigmamsfem12 + Amsfem12;
+matrix Aglob21 = Sigmamsfem21 + Amsfem21;
+
+Aglob = [ [Aglob11, Aglob12] , [Aglob21, Aglob22] ];
+
+Bglob = [ [Bmsfem11, Bmsfem12] , [Bmsfem21, Bmsfem22] ];
+
+Mat Amsfemtemp = Aglob;
+Mat Bmsfemtemp = Bglob;
+
+real[int] Listelambdamsfem(NumberEigenValue); //to store the nev eigenvalue
+real[int,int] ListeVecteurpropremsfem(Aglob.n,1) ; //to store the nev eigenvector
+
+
+int kmsfem = EPSSolve(Amsfemtemp, Bmsfemtemp, array = ListeVecteurpropremsfem, values  = Listelambdamsfem, sparams = ssparams); //Résolution du pb aux vp
+kmsfem=min(kmsfem,NumberEigenValue); // il arrive apparement qu'il n'y a pas que la 1ere vp renvoyee de cette fonction
+
+real lambdaH = Listelambdamsfem[NumberEigenValue-1]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+cout << "lambdaH" << lambdaH << endl;
+VH Vecteurpropremsfem1, Vecteurpropremsfem2;
+Vecteurpropremsfem1[](0:Vecteurpropremsfem1.n-1) = ListeVecteurpropremsfem(0:Vecteurpropremsfem1.n-1,0);
+Vecteurpropremsfem2[](0:Vecteurpropremsfem2.n-1) = ListeVecteurpropremsfem(Vecteurpropremsfem1.n:ListeVecteurpropremsfem.n-1,0);
+
+
+VH absVecteurpropremsfem1 = abs(Vecteurpropremsfem1);
+if (Vecteurpropremsfem1[].max/absVecteurpropremsfem1[].max<0.9)
+{
+    Vecteurpropremsfem1 = -Vecteurpropremsfem1;
+}
+VH absVecteurpropremsfem2 = abs(Vecteurpropremsfem2);
+if (Vecteurpropremsfem2[].max/absVecteurpropremsfem2[].max<0.9)
+{
+    Vecteurpropremsfem2 = -Vecteurpropremsfem2;
+}
+
+toc = clock();
+
+printmessage("Temps de resolution online du probleme MsFEM : " << toc - tic << " secondes ");
+printmessage("lambda_MsFEM_" << nameMethod << " = " << lambdaH);
+
+///////////////////////////////////////////////////////////////////////
+// Reconstruction of the MsFEM solution on the fine scale            //
+///////////////////////////////////////////////////////////////////////
+printmessage("Reconstruction of the MsFEM solution on the fine scale");
+tic = clock();
+
+
+Vh VecteurpropreHProjetee1=0; //multiscale solution
+Vh VecteurpropreHProjetee2=0; //multiscale solution
+for (int k=0; k<Ntri; k++)
+{// Loop over all elements to reuse the multiscale information of the offline stage
+	vk[][k]=1;
+	int[int] n2oFine;
+	mesh Kh=trunc(Th, vk>0.5, split=1, new2old=n2oFine); //mesh for the resolution of MsFEM solution
+	fespace VK(Kh,P1);
+	int[int] loc2globFine = restrict(VK, Vh, n2oFine);
+	
+	real[int] uhloc1(VK.ndof);
+    real[int] uhloc2(VK.ndof);
+	for (int i=0; i<3; i++) {
+		int dofi = VH(k,i);
+		int storei = storeIndex(k,i);
+		uhloc1 += Vecteurpropremsfem1[][dofi]*phiEps11[storei][] + Vecteurpropremsfem2[][dofi]*phiEps21[storei][];
+        uhloc2 += Vecteurpropremsfem2[][dofi]*phiEps22[storei][] + Vecteurpropremsfem1[][dofi]*phiEps12[storei][];
+	}
+	
+	VecteurpropreHProjetee1[](loc2globFine) = uhloc1; // Etant donné que on met ici "=" et non "+=", On perd des informations sur les bords
+    VecteurpropreHProjetee2[](loc2globFine) = uhloc2;
+    // Mais on ne peut pas mettre "+=" directement, car dans ce cas les valeurs au bord s'ajouteraient.
+    	
+	vk[][k]=0;
+}
+
+
+// Renormalisation
+real normeL2msfem=sqrt(int2d(Th)(VecteurpropreHProjetee1*VecteurpropreHProjetee1 + VecteurpropreHProjetee2*VecteurpropreHProjetee2));
+VecteurpropreHProjetee1[] = VecteurpropreHProjetee1[]/normeL2msfem;
+VecteurpropreHProjetee2[] = VecteurpropreHProjetee2[]/normeL2msfem;
+
+Vecteurpropremsfem1[] = Vecteurpropremsfem1[]/normeL2msfem;
+Vecteurpropremsfem2[] = Vecteurpropremsfem2[]/normeL2msfem;
+
+toc = clock();
+printmessage("Temps de reconstruction of the MsFEM solution on the fine scale : " << toc - tic << " secondes ");
+
+if (debug) plot(Vecteurpropremsfem1, fill=1, value=1, wait=1, cmm="MsFEM solution (coarse mesh) Energie 1");
+if (debug) plot(Vecteurpropremsfem2, fill=1, value=1, wait=1, cmm="MsFEM solution (coarse mesh) Energie 2");
+
+if (plots) plot(VecteurpropreHProjetee1, fill=1, value=1, wait=1, cmm="MsFEM solution (fine mesh) Energie 1");
+if (plots) plot(VecteurpropreHProjetee2, fill=1, value=1, wait=1, cmm="MsFEM solution (fine mesh) Energie 2");
+
+
+///////////////////////////////////////////////////////////////////////
+// Reference solution and error computation                          //
+///////////////////////////////////////////////////////////////////////
+/*
+// Load or compute reference solution
+ if (ErreurSurK) {
+	{
+		string solname = "./Solutions_reference/sol_" + nameMethod + parametersREF + ".txt";
+		ofstream ff(solname);
+		ff << VecteurpropreHProjetee[] << endl;
+		ff << endl;
+	}
+}*/
+
+///////////////////////////////////////////////////////////////////////
+// POST-PROCESSING                                                   //
+// (msfem_blocks/post.idp)                                           //
+///////////////////////////////////////////////////////////////////////
+string name = "REF";
+
+///////////////////////////////////////////////////////////////////////
+// Reference solution and error computation                          //
+///////////////////////////////////////////////////////////////////////
+
+// Load or compute reference solution
+tic = clock();
+
+printmessage("WARNING: No reference solution was found and it is recomputed");
+// Problem
+real lambdaref;
+Vh Vecteurpropreref1, Vecteurpropreref2;
+// Problem
+varf opref ([uref1,uref2], [vh1,vh2])  
+    = int2d(Th)(eps^2*a(Aeps1,uref1,vh1))
+    + int2d(Th)(eps^2*a(Aeps2,uref2,vh2))
+    + int2d(Th)((sigmaeps1*uref1 + sigmaeps2*uref2)*vh1
+          +(sigmaeps3*uref1 + sigmaeps4*uref2)*vh2) 
+    + on(1, 2, 3, 4, uref1=0)
+    + on(1, 2, 3, 4, uref2=0)
+    ;
+
+varf bref ([uref1,uref2], [vh1,vh2]) = int2d(Th)(uref1*vh1 + uref2*vh2); //no boundary condition
+
+matrix<real> Aref = opref(VhVh, VhVh, factorize=1); 
+matrix<real> Bref = bref(VhVh, VhVh, solver=CG, eps=1e-20);
+
+Mat Areftemp = Aref;
+Mat Breftemp = Bref;
+
+real[int] Listelambdaref(NumberEigenValue); //to store the nev eigenvalue (nev = 1 ici)
+VhVh[int] [ListeVecteurpropreref1,ListeVecteurpropreref2](NumberEigenValue); //to store the nev eigenvector
+
+
+int kref = EPSSolve(Areftemp, Breftemp, vectors = ListeVecteurpropreref1, values  = Listelambdaref, sparams = ssparams); //Résolution du pb aux vp
+kref=min(kref,NumberEigenValue);
+
+toc = clock();
+
+lambdaref = Listelambdaref[NumberEigenValue-1]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+
+cout << "lambdaref = " << lambdaref << endl;
+
+Vecteurpropreref1 = ListeVecteurpropreref1[NumberEigenValue-1];
+Vecteurpropreref2 = ListeVecteurpropreref2[NumberEigenValue-1];
+
+
+Vh absVecteurpropreref1; absVecteurpropreref1 = abs(Vecteurpropreref1);
+if (Vecteurpropreref1[].max/absVecteurpropreref1[].max<0.9)
+{
+    Vecteurpropreref1 = -Vecteurpropreref1;
+}
+Vh absVecteurpropreref2 = abs(Vecteurpropreref2);
+if (Vecteurpropreref2[].max/absVecteurpropreref2[].max<0.9)
+{
+    Vecteurpropreref2 = -Vecteurpropreref2;
+}
+
+// Renormalisation
+real normeL2ref=sqrt(int2d(Th)(Vecteurpropreref1*Vecteurpropreref1 + Vecteurpropreref2*Vecteurpropreref2));
+Vecteurpropreref1[] = Vecteurpropreref1[]/normeL2ref;
+Vecteurpropreref2[] = Vecteurpropreref2[]/normeL2ref;
+
+//toc = clock();
+
+printmessage("Temps de calcul de la solution de reference : " << toc - tic << " secondes ");
+printmessage("lambda_" << nameMethod << " = " << lambdaref);
+
+if (plots) plot(Vecteurpropreref1,wait=1,value=1,fill=1, cmm="Solution de reference Energie 1");
+
+if (plots) plot(Vecteurpropreref2,wait=1,value=1,fill=1, cmm="Solution de reference Energie 2");
+
+printmessage("Calcul des erreurs et stockage dans un fichier");
+tic = clock();
+
+// Compute norms of reference solution
+real nL11=0, nL21=0, nH11=0, nMoy1=0, nMax1=0;
+real nL12=0, nL22=0, nH12=0, nMoy2=0, nMax2=0;
+nL11=sqrt(int2d(Th)(Vecteurpropreref1));
+nL12=sqrt(int2d(Th)(Vecteurpropreref2));
+nL21=sqrt(int2d(Th)(Vecteurpropreref1*Vecteurpropreref1));
+nL22=sqrt(int2d(Th)(Vecteurpropreref2*Vecteurpropreref2));
+nMax1=Vecteurpropreref1[].max;
+nMax2=Vecteurpropreref2[].max;
+string printNorms = "norms: " + nL11 + "  " + nL21 + "  " + nH11 + "  " + nMax1;
+
+// Compute errors and relative errors
+Vh e1=0;
+Vh e2=0;
+Vh ErreurH1SansBordK1 = 0;
+Vh ErreurH1SansBordK2 = 0;
+real eL11, eL12, eL21, eL22, eH11, eH12, eMax1, eMax2, elambda, eMoy1, eMoy2, erL11, erL12, erL21, erL22, erH11, erH12, erMax1, erMax2, erlambda, erMoy1, erMoy2;
+real eGlobalL2, eGlobalH1, eGlobalMax;
+for(int k=0; k<Ntri; k++) {
+
+    vk[][k]=1;
+    int[int] n2oFine;
+	mesh Kh=trunc(Th, vk>0.5, split=1, new2old=n2oFine);
+    fespace VK(Kh,P1);
+	int[int] loc2globFine = restrict(VK, Vh, n2oFine);
+    
+    VK errK1=0;
+    VK errK2=0;
+    if (nameMethod=="P1") {
+        VK f11 = 0; f11[] = VecteurpropreHProjetee1[](loc2globFine);
+        VK f12 = 0; f12[] = Vecteurpropreref1[](loc2globFine);
+        errK1[] = f12[] - f11[];
+        VK f21 = 0; f21[] = VecteurpropreHProjetee2[](loc2globFine);
+        VK f22 = 0; f22[] = Vecteurpropreref2[](loc2globFine);
+        errK2[] = f22[] - f21[];
+
+    }else { // Je separe les cas car sur le bord du triangle, il faut bien que la valeur de Uhloc_K soit celle correspondant a la fonction de forme sur K et pas celle d'a cote (voir fin de online.MsFEM pour mieux comprendre)
+        //VK f1 = 0; f1[] = VecteurpropreHProjetee[](loc2globFine);
+        real[int] uhloc1(VK.ndof);
+        real[int] uhloc2(VK.ndof);
+        for (int i=0; i<3; i++) {
+            int dofi = VH(k,i);
+            int storei = storeIndex(k,i);
+            uhloc1 += Vecteurpropremsfem1[][dofi]*phiEps11[storei][] + Vecteurpropremsfem2[][dofi]*phiEps21[storei][];
+            uhloc2 += Vecteurpropremsfem2[][dofi]*phiEps22[storei][] + Vecteurpropremsfem1[][dofi]*phiEps12[storei][];
+        }
+
+        errK1[] = Vecteurpropreref1[](loc2globFine);
+        errK1[] = errK1[] - uhloc1;
+        errK2[] = Vecteurpropreref2[](loc2globFine);
+        errK2[] = errK2[] - uhloc2;
+
+        VK errKH11 = 0;
+        errKH11 = dx(errK1)*dx(errK1) + dy(errK1)*dy(errK1);
+        ErreurH1SansBordK1[](loc2globFine) = errKH11[];
+        VK errKH12 = 0;
+        errKH12 = dx(errK2)*dx(errK2) + dy(errK2)*dy(errK2);
+        ErreurH1SansBordK2[](loc2globFine) = errKH12[];
+    }
+
+    e1[](loc2globFine) = errK1[];
+    e2[](loc2globFine) = errK2[];
+    VK VecteurproprerefK1 = 0;
+    VK VecteurproprerefK2 = 0;
+    VecteurproprerefK1[] = Vecteurpropreref1[](loc2globFine);
+    VecteurproprerefK2[] = Vecteurpropreref2[](loc2globFine);
+    
+    nMoy1+=int2d(Kh)(VecteurproprerefK1)*int2d(Kh)(VecteurproprerefK1);
+    nMoy2+=int2d(Kh)(VecteurproprerefK2)*int2d(Kh)(VecteurproprerefK2);
+
+
+    // Error computations on K
+    
+    eL11+=int2d(Kh)(abs(errK1));
+    eL12+=int2d(Kh)(abs(errK2));
+    
+    eL21+=int2d(Kh)(errK1*errK1);
+    eL22+=int2d(Kh)(errK2*errK2);
+    
+    eH11+=int2d(Kh)(dx(errK1)*dx(errK1)+dy(errK1)*dy(errK1) + errK1*errK1);
+    eH12+=int2d(Kh)(dx(errK2)*dx(errK2)+dy(errK2)*dy(errK2) + errK2*errK2);
+    nH11+=int2d(Kh)(VecteurproprerefK1*VecteurproprerefK1 + dx(VecteurproprerefK1)*dx(VecteurproprerefK1) + dy(VecteurproprerefK1)*dy(VecteurproprerefK1));
+    nH12+=int2d(Kh)(VecteurproprerefK2*VecteurproprerefK2 + dx(VecteurproprerefK2)*dx(VecteurproprerefK2) + dy(VecteurproprerefK2)*dy(VecteurproprerefK2));
+
+    eMoy1+=int2d(Kh)(errK1)*int2d(Kh)(errK1);
+    eMoy2+=int2d(Kh)(errK2)*int2d(Kh)(errK2);
+    
+    errK1=abs(errK1);
+    errK2=abs(errK2);
+
+    eMax1=max(errK1[].max,eMax1);
+    eMax2=max(errK2[].max,eMax2);
+
+    vk[][k]=0;
+}
+// Taking square roots, determining the relative errors
+
+eL21 = sqrt(eL21);
+eH11 = sqrt(eH11);
+nH11 = sqrt(nH11);
+eL22 = sqrt(eL22);
+eH12 = sqrt(eH12);
+nH12 = sqrt(nH12);
+
+erL11=eL11/nL11; erL21=eL21/nL21;
+erL21=eL21/nL21; erL22=eL22/nL22;
+erH11=eH11/nH11; erH12=eH12/nH12;
+erMoy1 = sqrt(eMoy1/nMoy1); erMoy2 = sqrt(eMoy2/nMoy2);
+erMax1=eMax1/nMax1; erMax2=eMax2/nMax2;
+
+eGlobalL2 = sqrt(erL21^2 + erL22^2)/sqrt(2);
+eGlobalH1 = sqrt(erH11^2 + erH12^2)/sqrt(2);
+eGlobalMax = max(erMax1,erMax2);
+
+elambda = abs(lambdaH - lambdaref);
+erlambda = abs(lambdaH - lambdaref)/lambdaref;
+
+if (plots) plot(e1,wait=1,value=1, cmm="error Energie 1");
+if (plots) plot(e2,wait=1,value=1, cmm="error Energie 2");
+
+if (plots) plot(ErreurH1SansBordK1,wait=1,value=1, cmm="error, derivee Energie 1");
+if (plots) plot(ErreurH1SansBordK2,wait=1,value=1, cmm="error, derivee Energie 2");
+
+{// Writing errors to an external file
+    string errname = "Results/errors_reaction_diffusion_multigroup_" + nameMethod + "_Coeffs_" + NumCoeffDiff + ".txt";
+    ofstream ff(errname, append);
+    ff  << ParameterDescription
+        << endl
+        << "\t"
+        << "n\t" << n << "\t"
+        << "N\t" << Ndiscr << "\t"
+        << "eps\t" << eps << "\t"
+        << "NumVP\t" << NumberEigenValue << "\t"
+        << "osCoef\t" << osCoef << "\t"
+        << endl
+
+        << "\t\tL21\t\tL22\t\tH11\t\tH12\t\tmax1\t\tmax2\t\tlambdarel\t\teGlobalL2\t\teGlobalH1\t\teGlobalMax\t\t"
+        << endl;        
+    
+    ff  << "\t\t"
+        << erL21 <<"\t"<< erL22 <<"\t"<< erH11 <<"\t"<< erH12 <<"\t"<< erMax1 <<"\t" << erMax2 <<"\t" << erlambda <<"\t"
+        <<"\t"<< eGlobalL2 <<"\t"<<"\t"<< eGlobalH1 <<"\t"<<"\t"<< eGlobalMax <<"\t"
+        << endl;
+    
+	ff<<endl;
+}
+toc = clock();
+
+printmessage("Temps de calcul des erreurs : " << toc - tic << " secondes ");
+
+printmessage("////////////////////////////////////////////////////////////////");

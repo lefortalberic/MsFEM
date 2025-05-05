@@ -1,0 +1,134 @@
+///////////////////////////////////////////////////////////////////////
+// - Computation of spectral function Psi_triche                     //
+///////////////////////////////////////////////////////////////////////
+
+string ssparamstriche =            // Parameters for the distributed EigenValue solver
+  " -eps_nev " + 1       + // Number of eigenvalues
+  " -eps_type krylovschur" +
+  //" -eps_target "+ SigmaMean   + // Shift value
+  " -st_type sinvert "     
+  //" -st_pc_factor_mat_solver_type mumps "
+  //" -eps_view"             +
+  //" -eps_view_values"             +
+  //" -eps_gen_hermitian"      // The problem is symmetric
+  ;
+
+// Cellule unité
+fespace Vhperio(Th, P1, periodic=[[2, y], [4, y], [1, x], [3, x]]); //bi-periodic FE
+fespace VhperioVhperio(Th, [P1,P1], periodic=[[2, y], [4, y], [1, x], [3, x]]); //bi-periodic FE
+VhperioVhperio [u1, u2], [v1, v2]; //fonctions test et solution
+
+// Problem
+varf opPsi ([u1,u2], [v1,v2])  //Conditions périodiques aux bords
+    = int2d(Th)(
+          (sigmay1*u1 + sigmay2*u2)*v1
+          +(sigmay3*u1 + sigmay4*u2)*v2) 
+    + int2d(Th)(a(Ay1,u1,v1))
+    + int2d(Th)(a(Ay2,u2,v2))
+    ;
+
+// Problem
+varf opPsiadjoint ([u1,u2], [v1,v2])  //Conditions périodiques aux bords
+    = int2d(Th)(
+          (sigmay1*u1 + sigmay3*u2)*v1
+          +(sigmay2*u1 + sigmay4*u2)*v2)
+    + int2d(Th)(a(Ay1,u1,v1))
+    + int2d(Th)(a(Ay2,u2,v2))
+    ;
+
+varf bPsi ([u1,u2], [v1,v2]) = int2d(Th)(u1*v1 + u2*v2); //no boundary condition
+
+printmessage("Resolution du probleme aux valeurs propres dans la cellule unite");
+tic = clock();
+
+matrix<real> APsi = opPsi(VhperioVhperio, VhperioVhperio, factorize=1);
+matrix<real> APsiadjoint = opPsiadjoint(VhperioVhperio, VhperioVhperio, factorize=1);
+matrix<real> BPsi = bPsi(VhperioVhperio, VhperioVhperio, solver=CG, eps=1e-20);
+
+Mat APsitemp = APsi;
+Mat APsiadjointtemp = APsiadjoint;
+Mat BPsitemp = BPsi;
+
+real[int] ListelambdaPsi(1); //to store the nev eigenvalue
+VhperioVhperio[int] [ListeVecteurproprePsi1,ListeVecteurproprePsi2](1); //to store the nev eigenvector
+
+int k = EPSSolve(APsitemp, BPsitemp, vectors = ListeVecteurproprePsi1, values  = ListelambdaPsi, sparams = ssparamstriche); //Résolution du pb aux vp
+k=min(k,1); // il arrive apparement qu'il n'y a pas que la 1ere vp renvoyee de cette fonction
+
+lambdaPsi = ListelambdaPsi[0]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+Vhperio VecteurproprePsi1, VecteurproprePsi2;
+VecteurproprePsi1 = ListeVecteurproprePsi1[0];
+VecteurproprePsi2 = ListeVecteurproprePsi2[0];
+
+if (VecteurproprePsi1(Lx/2 , Ly/2)<0)  //Evaluation au point milieu
+{
+    VecteurproprePsi1 = -VecteurproprePsi1;
+}
+if (VecteurproprePsi2(Lx/2 , Ly/2)<0)  //Evaluation au point milieu
+{
+    VecteurproprePsi2 = -VecteurproprePsi2;
+}
+
+//renormalisation
+real normeL2Psi=sqrt(int2d(Th)(VecteurproprePsi1*VecteurproprePsi1 + VecteurproprePsi2*VecteurproprePsi2));
+VecteurproprePsi1[] = VecteurproprePsi1[]/normeL2Psi;
+VecteurproprePsi2[] = VecteurproprePsi2[]/normeL2Psi;
+
+real[int] ListelambdaPsiadjoint(1);
+VhperioVhperio[int] [ListeVecteurproprePsiadjoint1,ListeVecteurproprePsiadjoint2](1);
+
+int kadjoint = EPSSolve(APsiadjointtemp, BPsitemp, vectors = ListeVecteurproprePsiadjoint1, values  = ListelambdaPsiadjoint, sparams = ssparamstriche); //Résolution du pb aux vp
+kadjoint=min(kadjoint,1); // il arrive apparement qu'il n'y a pas que la 1ere vp renvoyee de cette fonction
+
+lambdaPsiadjoint = ListelambdaPsiadjoint[0]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+Vhperio VecteurproprePsiadjoint1, VecteurproprePsiadjoint2;
+VecteurproprePsiadjoint1 = ListeVecteurproprePsiadjoint1[0];
+VecteurproprePsiadjoint2 = ListeVecteurproprePsiadjoint2[0];
+
+if (VecteurproprePsiadjoint1(Lx/2 , Ly/2)<0)  //Evaluation au point milieu
+{
+    VecteurproprePsiadjoint1 = -VecteurproprePsiadjoint1;
+}
+
+if (VecteurproprePsiadjoint2(Lx/2 , Ly/2)<0)  //Evaluation au point milieu
+{
+    VecteurproprePsiadjoint2 = -VecteurproprePsiadjoint2;
+}
+
+//renormalisation
+normeL2Psi=sqrt(int2d(Th)(VecteurproprePsiadjoint1*VecteurproprePsiadjoint1 + VecteurproprePsiadjoint2*VecteurproprePsiadjoint2));
+VecteurproprePsiadjoint1[] = VecteurproprePsiadjoint1[]/normeL2Psi;
+VecteurproprePsiadjoint2[] = VecteurproprePsiadjoint2[]/normeL2Psi;
+
+toc = clock();
+
+printmessage("Temps de resolution du probleme aux valeurs propres dans la cellule unite : " << toc - tic << " secondes ");
+printmessage("lambda_Psi = " << lambdaPsi);
+
+if (plots) plot(VecteurproprePsi1,wait=1,value=1,fill=1, cmm="Psi1 sur la cellule unite");
+if (plots) plot(VecteurproprePsi2,wait=1,value=1,fill=1, cmm="Psi2 sur la cellule unite");
+if (plots) plot(VecteurproprePsiadjoint1,wait=1,value=1,fill=1, cmm="Psiadjoint1 sur la cellule unite");
+if (plots) plot(VecteurproprePsiadjoint2,wait=1,value=1,fill=1, cmm="Psiadjoint2 sur la cellule unite");
+
+if (SymetrieBool) {
+
+    real tmpx = int2d(Th)(Ay1*(VecteurproprePsi1*dx(VecteurproprePsiadjoint1)-VecteurproprePsiadjoint1*dx(VecteurproprePsi1)))
+                    + int2d(Th)(Ay2*(VecteurproprePsi2*dx(VecteurproprePsiadjoint2)-VecteurproprePsiadjoint2*dx(VecteurproprePsi2)));
+    cout << "tmptrichex = " << tmpx << endl;
+
+    real tmpxdenom = int2d(Th)(abs(Ay1*(VecteurproprePsi1*dx(VecteurproprePsiadjoint1)-VecteurproprePsiadjoint1*dx(VecteurproprePsi1))))
+                    + int2d(Th)(abs(Ay2*(VecteurproprePsi2*dx(VecteurproprePsiadjoint2)-VecteurproprePsiadjoint2*dx(VecteurproprePsi2))));
+    cout << "tmpxtrichedenom = " << tmpxdenom << endl;
+
+    cout << "tmptrichex/tmptrichedenom = " << tmpx/tmpxdenom << endl;
+
+    real tmpy = int2d(Th)(Ay1*(VecteurproprePsi1*dy(VecteurproprePsiadjoint1)-VecteurproprePsiadjoint1*dy(VecteurproprePsi1)))
+                    + int2d(Th)(Ay2*(VecteurproprePsi2*dy(VecteurproprePsiadjoint2)-VecteurproprePsiadjoint2*dy(VecteurproprePsi2)));
+    cout << "tmptrichey = " << tmpy << endl;
+
+    real tmpydenom = int2d(Th)(abs(Ay1*(VecteurproprePsi1*dy(VecteurproprePsiadjoint1)-VecteurproprePsiadjoint1*dy(VecteurproprePsi1))))
+                    + int2d(Th)(abs(Ay2*(VecteurproprePsi2*dy(VecteurproprePsiadjoint2)-VecteurproprePsiadjoint2*dy(VecteurproprePsi2))));
+    cout << "tmptricheydenom = " << tmpydenom << endl;
+
+    cout << "tmptrichey/tmptricheydenom = " << tmpy/tmpydenom << endl;    
+}

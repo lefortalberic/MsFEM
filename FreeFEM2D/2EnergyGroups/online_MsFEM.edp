@@ -1,0 +1,166 @@
+
+///////////////////////////////////////////////////////////////////////
+// Online stage                                                      //
+///////////////////////////////////////////////////////////////////////
+
+tic = clock();
+
+// Define global matrix and add boundary conditions to the system by penalization
+matrix Amsfem1 = [Imat(0:nnz-1), Jmat(0:nnz-1), Amat1(0:nnz-1)];
+matrix Amsfem2 = [Imat(0:nnz-1), Jmat(0:nnz-1), Amat2(0:nnz-1)];
+matrix Bmsfem1 = [Imat(0:nnz-1), Jmat(0:nnz-1), Bmat1(0:nnz-1)];
+matrix Bmsfem2 = [Imat(0:nnz-1), Jmat(0:nnz-1), Bmat2(0:nnz-1)];
+matrix Sigmamsfem11 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat11(0:nnz-1)];
+matrix Sigmamsfem12 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat12(0:nnz-1)];
+matrix Sigmamsfem21 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat21(0:nnz-1)];
+matrix Sigmamsfem22 = [Imat(0:nnz-1), Jmat(0:nnz-1), Sigmamat22(0:nnz-1)];
+matrix Zeros((Amsfem1.n), (Amsfem1.n)) ;
+Zeros=Zeros*0;
+
+varf boundarycondition(u,v) = int1d(TH)(tgv*u*v);
+matrix Abc = boundarycondition(VH,VH);
+
+matrix Aglob(2*(Amsfem1.n), 2*(Amsfem1.n));
+matrix Bglob(2*(Amsfem1.n), 2*(Amsfem1.n));
+
+matrix Aglob1 = Amsfem1 + Sigmamsfem11 + Abc;
+matrix Aglob2 = Amsfem2 + Sigmamsfem22 + Abc;
+
+Aglob = [ [Aglob1, Sigmamsfem12] , [Sigmamsfem21, Aglob2] ];
+
+Bglob = [ [Bmsfem1, Zeros] , [Zeros, Bmsfem2] ];
+
+Mat Amsfemtemp = Aglob;
+Mat Bmsfemtemp = Bglob;
+
+real[int] Listelambdamsfem(NumberEigenValue); //to store the nev eigenvalue
+real[int,int] ListeVecteurpropremsfem(Aglob.n,1) ; //to store the nev eigenvector
+
+
+int kmsfem = EPSSolve(Amsfemtemp, Bmsfemtemp, array = ListeVecteurpropremsfem, values  = Listelambdamsfem, sparams = ssparams); //Résolution du pb aux vp
+kmsfem=min(kmsfem,NumberEigenValue); // il arrive apparement qu'il n'y a pas que la 1ere vp renvoyee de cette fonction
+
+real lambdaH = Listelambdamsfem[NumberEigenValue-1]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+cout << "lambdaH" << lambdaH << endl;
+VH Vecteurpropremsfem1, Vecteurpropremsfem2;
+Vecteurpropremsfem1[](0:Vecteurpropremsfem1.n-1) = ListeVecteurpropremsfem(0:Vecteurpropremsfem1.n-1,0);
+Vecteurpropremsfem2[](0:Vecteurpropremsfem2.n-1) = ListeVecteurpropremsfem(Vecteurpropremsfem1.n:ListeVecteurpropremsfem.n-1,0);
+
+
+VH absVecteurpropremsfem1 = abs(Vecteurpropremsfem1);
+if (Vecteurpropremsfem1[].max/absVecteurpropremsfem1[].max<0.9)
+{
+    Vecteurpropremsfem1 = -Vecteurpropremsfem1;
+}
+VH absVecteurpropremsfem2 = abs(Vecteurpropremsfem2);
+if (Vecteurpropremsfem2[].max/absVecteurpropremsfem2[].max<0.9)
+{
+    Vecteurpropremsfem2 = -Vecteurpropremsfem2;
+}
+
+toc = clock();
+
+printmessage("Temps de resolution online du probleme MsFEM : " << toc - tic << " secondes ");
+printmessage("lambda_MsFEM_" << nameMethod << " = " << lambdaH);
+
+///////////////////////////////////////////////////////////////////////
+// Reconstruction of the MsFEM solution on the fine scale            //
+///////////////////////////////////////////////////////////////////////
+printmessage("Reconstruction of the MsFEM solution on the fine scale");
+tic = clock();
+
+
+Vh VecteurpropreHProjetee1=0; //multiscale solution
+Vh VecteurpropreHProjetee2=0; //multiscale solution
+for (int k=0; k<Ntri; k++)
+{// Loop over all elements to reuse the multiscale information of the offline stage
+	vk[][k]=1;
+	int[int] n2oFine;
+	mesh Kh=trunc(Th, vk>0.5, split=1, new2old=n2oFine); //mesh for the resolution of MsFEM solution
+	fespace VK(Kh,P1);
+	int[int] loc2globFine = restrict(VK, Vh, n2oFine);
+	
+	real[int] uhloc1(VK.ndof);
+    real[int] uhloc2(VK.ndof);
+	for (int i=0; i<3; i++) {
+		int dofi = VH(k,i);
+		int storei = storeIndex(k,i);
+		uhloc1 += Vecteurpropremsfem1[][dofi]*phiEps11[storei][];
+        uhloc2 += Vecteurpropremsfem2[][dofi]*phiEps22[storei][];
+	}
+	
+	VecteurpropreHProjetee1[](loc2globFine) = uhloc1; // Etant donné que on met ici "=" et non "+=", On perd des informations sur les bords
+    VecteurpropreHProjetee2[](loc2globFine) = uhloc2;
+    // Mais on ne peut pas mettre "+=" directement, car dans ce cas les valeurs au bord s'ajouteraient.
+    	
+	vk[][k]=0;
+}
+
+
+// Renormalisation
+real normeL2msfem=sqrt(int2d(Th)(VecteurpropreHProjetee1*VecteurpropreHProjetee1 + VecteurpropreHProjetee2*VecteurpropreHProjetee2));
+VecteurpropreHProjetee1[] = VecteurpropreHProjetee1[]/normeL2msfem;
+VecteurpropreHProjetee2[] = VecteurpropreHProjetee2[]/normeL2msfem;
+
+Vecteurpropremsfem1[] = Vecteurpropremsfem1[]/normeL2msfem;
+Vecteurpropremsfem2[] = Vecteurpropremsfem2[]/normeL2msfem;
+
+toc = clock();
+printmessage("Temps de reconstruction of the MsFEM solution on the fine scale : " << toc - tic << " secondes ");
+
+if (debug) plot(Vecteurpropremsfem1, fill=1, value=1, wait=1, cmm="MsFEM solution (coarse mesh) Energie 1");
+if (debug) plot(Vecteurpropremsfem2, fill=1, value=1, wait=1, cmm="MsFEM solution (coarse mesh) Energie 2");
+
+if (plots) plot(VecteurpropreHProjetee1, fill=1, value=1, wait=1, cmm="MsFEM solution (fine mesh) Energie 1");
+if (plots) plot(VecteurpropreHProjetee2, fill=1, value=1, wait=1, cmm="MsFEM solution (fine mesh) Energie 2");
+
+
+/*if (plots) {
+
+    int l = 12;
+    Vh Fctforme;
+    VH choixNoeud=0;
+    choixNoeud[][l]=1;
+    for (int k=0; k<Ntri; k++)
+    {// Loop over all elements to reuse the multiscale information of the offline stage
+        vk[][k]=1;
+        int[int] n2oFine;
+        mesh Kh=trunc(Th, vk>0.5, split=1, new2old=n2oFine); //mesh for the resolution of MsFEM solution
+        fespace VK(Kh,P1);
+        int[int] loc2globFine = restrict(VK, Vh, n2oFine);
+        
+        real[int] uhloc(VK.ndof);
+        for (int i=0; i<3; i++) {
+            int dofi = VH(k,i);
+            int storei = storeIndex(k,i);
+            uhloc += choixNoeud[][dofi]*phiEps[storei][];
+        }
+        
+        Fctforme[](loc2globFine) = uhloc; // Etant donné que on met ici "=" et non "+=", On perd des informations sur les bords
+        // Mais on ne peut pas mettre "+=" directement, car dans ce cas les valeurs au bord s'ajouteraient.
+            
+        vk[][k]=0;
+    }
+    plot(TH, Fctforme, fill=1, value=1, wait=1, cmm="Exemple de fonction de forme");
+}*/
+
+
+
+
+// Stockage des fonctions de formes, et de la solution MsFEM du maillage grossier
+/*if (CompareMsFEMMsFEMrecombined)
+{
+    printmessage("Stockage des fonctions de formes, et de la solution MsFEM du maillage grossier");
+    for(int i=0; i<phiEps.n; i++)
+    {
+        string FonctionsFormeMsfem = "./Fonctions_forme/fct_forme_numero_"+ i + "_MsFEM" + parametersMsFEM + ".txt";
+        ofstream ff(FonctionsFormeMsfem);
+        ff << phiEps[i][] << endl;
+        ff << endl;
+    }
+
+    string VecteurpropreHMsfem = "./Fonctions_forme/VecteurpropreHMsFEM" + parametersMsFEM + ".txt";
+    ofstream ff(VecteurpropreHMsfem);
+    ff << Vecteurpropremsfem[] << endl;
+    ff << endl;
+}*/

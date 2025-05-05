@@ -1,0 +1,5 @@
+-- Tests for Aeps = (6+20*cos(pi*x)*sin(pi*y)*cos(pi*x)*sin(pi*y)) ------ Sigmaeps = 18*(2+4*cos(pi*x)*sin(pi*y)*cos(pi*x)*sin(pi*y)) --
+	n	8	N	256	eps	0.125	NumVP	1	osCoef	2	
+		L21		L22		H11		H12		max1		max2		lambdarel		eGlobalL2		eGlobalH1		eGlobalMax		
+		0.0302335	0.0227802	0.20859	0.23326	0.0496113	0.0440921	0.00540787		0.0267675		0.221269		0.0496113	
+

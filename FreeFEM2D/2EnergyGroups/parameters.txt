@@ -1,0 +1,7 @@
+L= 1.
+N= 256
+n= 8
+eps= 0.125
+NumCoeffDiff= 4
+NumberEigenValue= 1
+osCoef= 2
