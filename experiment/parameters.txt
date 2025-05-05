@@ -1,0 +1,7 @@
+L= 1.
+N= 300
+n= 3
+eps= 0.47
+NumCoeffDiff= 2
+NumberEigenValue= 1
+osCoef= 2
