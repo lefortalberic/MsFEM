@@ -1,0 +1,35 @@
+////////////////////////////////////////////////////////////////
+// Calcul de la solution de reference avec les parametres _N_512_eps_0.125_NumVP_1_NumCoeffDiff_2
+Temps d'initialisation du maillage, et de l'espace de discretisation : 72.5429 secondes 
+Debut de la methode REF avec les parametres _N_512_eps_0.125_NumVP_1_NumCoeffDiff_2
+Temps de calcul de la solution de reference : 4.18732 secondes 
+lambda_REF = 41.406
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Calcul de la solution de reference avec les parametres _N_512_eps_0.085_NumVP_1_NumCoeffDiff_1
+Temps d'initialisation du maillage, et de l'espace de discretisation : 70.4225 secondes 
+Debut de la methode REF avec les parametres _N_512_eps_0.085_NumVP_1_NumCoeffDiff_1
+Temps de calcul de la solution de reference : 4.2115 secondes 
+lambda_REF = 36.5681
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Calcul de la solution de reference avec les parametres _N_256_eps_0.12_NumVP_1_NumCoeffDiff_1
+Temps d'initialisation du maillage, et de l'espace de discretisation : 16.0856 secondes 
+Debut de la methode REF avec les parametres _N_256_eps_0.12_NumVP_1_NumCoeffDiff_1
+Temps de calcul de la solution de reference : 0.75121 secondes 
+lambda_REF = 37.342
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_OS_carre_filtre avec les parametres _N_256_n_8_eps_0.12_NumVP_1_osCoef_2_NumCoeffDiff_1
+Temps d'initialisation du maillage, et de l'espace de discretisation : 16.5147 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 13.2383 secondes 
+Temps de resolution online du probleme MsFEM : 0.002266 secondes 
+lambda_MsFEM_MsFEM_OS_carre_filtre = 37.4865
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.51487 secondes 
+WARNING: No reference solution was found and it is recomputed
+Temps de calcul de la solution de reference : 1.31292 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 1.99694 secondes 
+////////////////////////////////////////////////////////////////

@@ -1,0 +1,91 @@
+///////////////////////////////////////////////////////////////////////
+// - Computation of spectral function Psi_triche                     //
+///////////////////////////////////////////////////////////////////////
+
+string ssparamstriche =            // Parameters for the distributed EigenValue solver
+  " -eps_nev " + 1       + // Number of eigenvalues
+  " -eps_type krylovschur" +
+  " -eps_target "+ SigmaMean   + // Shift value
+  " -st_type sinvert "     +
+  //" -eps_view"             +
+  //" -eps_view_values"             +
+  " -eps_gen_hermitian"      // The problem is symmetric
+  ;
+
+// Cellule unité
+fespace Vhperio(Th, P1, periodic=[[2, y], [4, y], [1, x], [3, x]]); //bi-periodic FE
+
+// Problem
+varf opPsi (u, v)  //Conditions périodiques aux bords
+    = int2d(Th)(
+          sigmay*u*v)
+    + int2d(Th)(a(Ay,u,v))
+    ;
+
+varf bPsi (u, v) = int2d(Th)(u*v); //no boundary condition
+
+printmessage("Resolution du probleme aux valeurs propres dans la cellule unite");
+tic = clock();
+
+matrix<real> APsi = opPsi(Vhperio, Vhperio, factorize=1);
+matrix<real> BPsi = bPsi(Vhperio, Vhperio, solver=CG, eps=1e-20);
+
+Mat APsitemp = APsi;
+Mat BPsitemp = BPsi;
+
+real[int] ListelambdaPsi(1); //to store the nev eigenvalue
+Vhperio[int] ListeVecteurproprePsi(1); //to store the nev eigenvector
+
+int k = EPSSolve(APsitemp, BPsitemp, vectors = ListeVecteurproprePsi, values  = ListelambdaPsi, sparams = ssparamstriche); //Résolution du pb aux vp
+k=min(k,1); // il arrive apparement qu'il n'y a pas que la 1ere vp renvoyee de cette fonction
+
+lambdaPsi = ListelambdaPsi[0]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+Vhperio VecteurproprePsi;
+VecteurproprePsi[] = ListeVecteurproprePsi[0][];
+
+
+if (VecteurproprePsi(Lx/2 , Ly/2)<0)  //Evaluation au point milieu
+{
+    VecteurproprePsi = -VecteurproprePsi;
+}
+
+// Renormalisation
+real normeL2Psi=sqrt(int2d(Th)(VecteurproprePsi*VecteurproprePsi));
+VecteurproprePsi[] = VecteurproprePsi[]/normeL2Psi;
+
+toc = clock();
+
+printmessage("Temps de resolution du probleme aux valeurs propres dans la cellule unite : " << toc - tic << " secondes ");
+printmessage("lambda_Psi = " << lambdaPsi);
+
+if (plots) plot(VecteurproprePsi,wait=1,value=1,fill=1, cmm="Psi sur la cellule unite");
+
+
+if (CoeffHomogenizedbool) {
+
+	varf correctors(uh,vh) = int2d(Th)(VecteurproprePsi^2*a(Ay,uh,vh));
+
+  varf RHScorrectorsX(unused,vh) = int2d(Th)(-VecteurproprePsi^2*Ay*dx(vh));
+  varf RHScorrectorsY(unused,vh) = int2d(Th)(-VecteurproprePsi^2*Ay*dy(vh));
+
+  matrix Aloc=correctors(Vhperio,Vhperio);
+	set(Aloc, solver=UMFPACK);
+
+	Vhperio Bx; Bx[] = RHScorrectorsX(0,Vhperio);
+  Vhperio By; By[] = RHScorrectorsY(0,Vhperio);
+	
+  Vhperio CorrectorX ; CorrectorX[] = Aloc^-1*Bx[];
+  Vhperio CorrectorY ; CorrectorY[] = Aloc^-1*By[];
+
+  plot(CorrectorX,wait=1,value=1,fill=1, cmm="CorrectorX");
+  plot(CorrectorY,wait=1,value=1,fill=1, cmm="CorrectorY");
+
+  // Homogenized coefficients
+  real[int] CoeffHomogenized(3);
+  CoeffHomogenized[0] = int2d(Th)(VecteurproprePsi^2*Ay*(dx(CorrectorX)+1));
+  CoeffHomogenized[1] = int2d(Th)(VecteurproprePsi^2*Ay*(dy(CorrectorY)+1));
+  CoeffHomogenized[2] = int2d(Th)(VecteurproprePsi^2*Ay*(dy(CorrectorY)));
+  cout << "A11 = " << CoeffHomogenized[0] << endl;
+  cout << "A22 = " << CoeffHomogenized[1] << endl;
+  cout << "A12 = " << CoeffHomogenized[2] << endl;
+}
