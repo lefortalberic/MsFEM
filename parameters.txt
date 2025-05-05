@@ -1,7 +1,0 @@
-L= 1.
-N= 512
-n= 8
-eps= 0.085
-NumCoeffDiff= 1
-NumberEigenValue= 1
-osCoef= 2
