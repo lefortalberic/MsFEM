@@ -1,0 +1,85 @@
+// react_diff_P1.edp
+//
+// A FreeFEM++ script that shows the usual, intrusive MsFEM approach on a simple diffusion problem
+//
+// Note that this implementation is possible mainly due to the following in-depth functionality of FreeFEM++:
+// - VK(k,i) gives the global degree of freedom of the ith local DOF in the kth triangle of the mesh
+
+//mpirun -np 1 FreeFem++-mpi -wg main_react_diff_P1.edp -v 0
+string nameMethod = "P1";
+
+include "init.edp"
+
+///////////////////////////////////////////////////////////////////////
+// Online stage                                                      //
+///////////////////////////////////////////////////////////////////////
+
+// Problem
+varf op (uH, vH)
+    = int2d(TH)(
+          sigmaepsrecombine*uH*vH)
+    + int2d(TH)(eps^2*a(Aepsrecombine,uH,vH))
+
+    + on(1, 2, 3, 4, uH=0)
+    ;
+
+
+varf b (uH, vH) = int2d(TH)(uH*vH); //no boundary condition
+
+printmessage("Resolution du probleme aux valeurs propres approche")
+
+tic = clock();
+
+matrix<real> AH = op(VH, VH, factorize=1);
+matrix<real> BH = b(VH, VH, solver=CG, eps=1e-20);
+
+// important remark:
+// the boundary condition is make with exact penalization:
+// we put 1e30=tgv on the diagonal term of the lock degree of freedom.
+// So take Dirichlet boundary condition just on $a$ variational form
+// and not on $b$ variational form.
+// because we solve $ w=OP^-1*B*v $
+
+// Solve
+
+Mat AHtemp = AH;
+Mat BHtemp = BH;
+
+real[int] ListelambdaH(1); //to store the nev eigenvalue
+VH[int] ListeVecteurpropreH(1); //to store the nev eigenvector
+
+int k = EPSSolve(AHtemp, BHtemp, vectors = ListeVecteurpropreH, values  = ListelambdaH, sparams = ssparams); //Résolution du pb aux vp
+
+k=min(k,1); // il arrive apparement qu'il n'y a pas que la 1ere vp renvoyee de cette fonction
+
+real lambdaH = ListelambdaH[0]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+VH Vecteurpropremsfem;
+Vecteurpropremsfem[] = ListeVecteurpropreH[0][];
+
+VH absVecteurpropremsfem = abs(Vecteurpropremsfem);
+if (Vecteurpropremsfem[].max/absVecteurpropremsfem[].max<0.9)
+{
+    Vecteurpropremsfem = -Vecteurpropremsfem;
+}
+
+
+// Renormalisation
+real normeL2H=sqrt(int2d(TH)(Vecteurpropremsfem*Vecteurpropremsfem));
+Vecteurpropremsfem[] = Vecteurpropremsfem[]/normeL2H;
+
+toc = clock();
+
+printmessage("Temps de resolution du probleme aux valeurs propres approche : " << toc - tic << " secondes ");
+printmessage("lambda_" << nameMethod << " = " << lambdaH);
+
+if (plots) plot(Vecteurpropremsfem,wait=1,value=1,fill=1, cmm="solution approchee, methode P1");
+
+Vh VecteurpropreHProjetee = Vecteurpropremsfem;
+
+///////////////////////////////////////////////////////////////////////
+// Reference solution and error computation                          //
+///////////////////////////////////////////////////////////////////////
+
+// Load or compute reference solution
+
+include "post.edp"

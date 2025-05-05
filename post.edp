@@ -1,0 +1,453 @@
+///////////////////////////////////////////////////////////////////////
+// POST-PROCESSING                                                   //
+// (msfem_blocks/post.idp)                                           //
+///////////////////////////////////////////////////////////////////////
+string name = "REF";
+
+///////////////////////////////////////////////////////////////////////
+// Reference solution and error computation                          //
+///////////////////////////////////////////////////////////////////////
+
+// Load or compute reference solution
+tic = clock();
+
+Vh Vecteurpropreref;
+real lambdaref;
+Vh absVecteurpropreref;
+/*
+try {
+
+printmessage("Chargement de la solution de reference");
+{
+    string solname = "./Solutions_reference/sol_" + name + parametersREF + ".txt";
+    ifstream ff(solname);
+    ff>>Vecteurpropreref[];
+}
+{
+    string solname2 = "./Solutions_reference/VP_" + name + parametersREF + ".txt";
+    ifstream ff(solname2);
+    ff>>lambdaref;
+}
+
+}
+catch (...) { //Si la solution de référence n'a pas encore été calculée :
+*/
+printmessage("WARNING: No reference solution was found and it is recomputed");
+// Problem
+varf opref (uref, vh)
+    = int2d(Th)(
+          sigmaepsrecombine(x,y)*uref*vh)
+    + int2d(Th)(eps^2*a(Aepsrecombine(x,y),uref,vh))
+
+    + on(1, 2, 3, 4, uref=0)
+    ;
+
+varf bref (uref, vh) = int2d(Th)(uref*vh); //no boundary condition
+
+matrix<real> Aref = opref(Vh, Vh, factorize=1); 
+matrix<real> Bref = bref(Vh, Vh, solver=CG, eps=1e-20);
+
+Mat Areftemp = Aref;
+Mat Breftemp = Bref;
+
+Vh Vecteurpropreref1;
+Vh Vecteurpropreref2;
+
+if (NumberEigenValue==2 || NumberEigenValue==3)
+{
+    real[int] Listelambdaref(3); //to store the nev eigenvalue (nev = 1 ici)
+    Vh[int] ListeVecteurpropreref(3); //to store the nev eigenvector
+    string ssparamsloc =            // Parameters for the distributed EigenValue solver
+    " -eps_nev " + 3       + // Number of eigenvalues
+    " -eps_type krylovschur" +
+    " -eps_target "+ 0   + // Shift value
+    " -st_type sinvert "     +
+    //" -eps_view"             +
+    //" -eps_view_values"             +
+    " -eps_gen_hermitian"      // The problem is symmetric
+    ;
+    int kref = EPSSolve(Areftemp, Breftemp, vectors = ListeVecteurpropreref, values  = Listelambdaref, sparams = ssparamsloc); //Résolution du pb aux vp
+    kref=min(kref,3);
+
+    lambdaref = Listelambdaref[2]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+
+    Vecteurpropreref1[] = ListeVecteurpropreref[1][];
+
+        // Renormalisation
+    real normeH1ref1=sqrt(int2d(Th)(Vecteurpropreref1*Vecteurpropreref1 + dx(Vecteurpropreref1)*dx(Vecteurpropreref1) + dy(Vecteurpropreref1)*dy(Vecteurpropreref1)));
+    Vecteurpropreref1[] = Vecteurpropreref1[]/normeH1ref1;
+
+    Vecteurpropreref2[] = ListeVecteurpropreref[2][];
+    //plot(Vecteurpropreref2,wait=1,value=1,fill=1, cmm="Second vecteur propre de reference, pour la seconde valeur propre avant Gram Schmidt");
+    Vecteurpropreref2[] = Vecteurpropreref2[] - int2d(Th)(Vecteurpropreref1*Vecteurpropreref2)*Vecteurpropreref1[]; //Gram Schmidt pour avoir un vecteur orthogonal au premier pour la norme H1
+
+    // Renormalisation
+    real normeH1ref2=sqrt(int2d(Th)(Vecteurpropreref2*Vecteurpropreref2 + dx(Vecteurpropreref2)*dx(Vecteurpropreref2) + dy(Vecteurpropreref2)*dy(Vecteurpropreref2)));
+    Vecteurpropreref2[] = Vecteurpropreref2[]/normeH1ref2;
+    
+    Vecteurpropreref[] = int2d(Th)(Vecteurpropreref1*VecteurpropreHProjetee + dx(Vecteurpropreref1)*dx(VecteurpropreHProjetee) + dy(Vecteurpropreref1)*dy(VecteurpropreHProjetee))*Vecteurpropreref1[] 
+                       + int2d(Th)(Vecteurpropreref2*VecteurpropreHProjetee + dx(Vecteurpropreref2)*dx(VecteurpropreHProjetee) + dy(Vecteurpropreref2)*dy(VecteurpropreHProjetee))*Vecteurpropreref2[];
+
+        // Renormalisation
+    real normeL2ref=sqrt(int2d(Th)(Vecteurpropreref*Vecteurpropreref));
+    Vecteurpropreref[] = Vecteurpropreref[]/normeL2ref;
+    real normeL2ref1=sqrt(int2d(Th)(Vecteurpropreref1*Vecteurpropreref1));
+    Vecteurpropreref1[] = Vecteurpropreref1[]/normeL2ref1;
+    real normeL2ref2=sqrt(int2d(Th)(Vecteurpropreref2*Vecteurpropreref2));
+    Vecteurpropreref2[] = Vecteurpropreref2[]/normeL2ref2;
+
+    if (plots) plot(Vecteurpropreref1,wait=1,value=1,fill=1, cmm="Premier vecteur propre de reference, pour la seconde valeur propre");
+    if (plots) plot(Vecteurpropreref2,wait=1,value=1,fill=1, cmm="Second vecteur propre de reference, pour la seconde valeur propre");
+    if (plots) plot(Vecteurpropreref,wait=1,value=1,fill=1, cmm="Projetee de la solution MsFEM sur l'espace des deux premiers vecteurs propres de reference");
+
+}
+if (NumberEigenValue==4)
+{
+    real[int] Listelambdaref(NumberEigenValue); //to store the nev eigenvalue (nev = 1 ici)
+    Vh[int] ListeVecteurpropreref(NumberEigenValue); //to store the nev eigenvector
+
+    int kref = EPSSolve(Areftemp, Breftemp, vectors = ListeVecteurpropreref, values  = Listelambdaref, sparams = ssparams); //Résolution du pb aux vp
+    kref=min(kref,NumberEigenValue);
+
+    lambdaref = Listelambdaref[NumberEigenValue-1]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+
+    Vecteurpropreref[] = ListeVecteurpropreref[NumberEigenValue-1][];
+
+    if (plots) plot(Vecteurpropreref,wait=1,value=1,fill=1, cmm="Premier vecteur propre de reference, pour la troisieme valeur propre");
+
+        // Renormalisation
+    real normeL2ref=sqrt(int2d(Th)(Vecteurpropreref*Vecteurpropreref));
+    Vecteurpropreref[] = Vecteurpropreref[]/normeL2ref;
+
+}
+if (NumberEigenValue!=2 && NumberEigenValue!=3 && NumberEigenValue!=4) {
+
+real[int] Listelambdaref(NumberEigenValue); //to store the nev eigenvalue (nev = 1 ici)
+Vh[int] ListeVecteurpropreref(NumberEigenValue); //to store the nev eigenvector
+
+int kref = EPSSolve(Areftemp, Breftemp, vectors = ListeVecteurpropreref, values  = Listelambdaref, sparams = ssparams); //Résolution du pb aux vp
+kref=min(kref,NumberEigenValue);
+
+lambdaref = Listelambdaref[NumberEigenValue-1]; //La fonction EPSSolve n'a l'air de vouloir que des vecteurs des valeurs propres et vectpropres
+
+Vecteurpropreref[] = ListeVecteurpropreref[NumberEigenValue-1][];
+
+absVecteurpropreref = abs(Vecteurpropreref);
+if (Vecteurpropreref[].max/absVecteurpropreref[].max<0.9)
+{
+    Vecteurpropreref = -Vecteurpropreref;
+}
+// Renormalisation
+real normeL2ref=sqrt(int2d(Th)(Vecteurpropreref*Vecteurpropreref));
+Vecteurpropreref[] = Vecteurpropreref[]/normeL2ref;
+}
+
+toc = clock();
+
+printmessage("Temps de calcul de la solution de reference : " << toc - tic << " secondes ");
+
+{
+    string solname = "./Solutions_reference/sol_" + name + parametersREF + ".txt";
+    ofstream ff(solname);
+    ff << Vecteurpropreref[] << endl;
+    ff << endl;
+}
+
+{
+    string solname2 = "./Solutions_reference/VP_" + name + parametersREF + ".txt";
+    ofstream ff(solname2);
+    ff << lambdaref << endl;
+    ff << endl;
+}
+
+VH Vecteurpropremsfemtmp;
+Vstore[int] phiEpstmp(3*Ntri); //basis function matrix triangle by triangle
+if (CompareMsFEMMsFEMrecombined && recombinebool==1)
+{
+    Vstore phiEpstmpi;
+    for (int i=0; i<phiEpstmp.n; i++ ) phiEpstmp[i]=0;
+    string parametersMsFEMtmp = "_N_" + Ndiscr + "_n_" + nx + "_eps_" + eps + "_NumVP_" + NumberEigenValue + "_osCoef_" + osCoef + "_NumCoeffDiff_-" + NumCoeffDiff; // Je mets bien un "-" pour comparer au coeff déja recombiné
+    for(int i=0; i<phiEps.n; i++)
+    {   
+        string FonctionsFormeMsfem = "./Fonctions_forme/fct_forme_numero_"+ i + "_MsFEM" + parametersMsFEMtmp + ".txt";
+        ifstream ff(FonctionsFormeMsfem);
+        ff >> phiEpstmpi[];
+
+        phiEpstmp[i][] = phiEpstmpi[];
+    }
+
+    string VecteurpropreHMsfem = "./Fonctions_forme/VecteurpropreHMsFEM" + parametersMsFEMtmp + ".txt";
+    ifstream ff(VecteurpropreHMsfem);
+    ff >> Vecteurpropremsfemtmp[];
+}
+
+//}
+
+real produitscalaire = int2d(Th)(Vecteurpropreref*VecteurpropreHProjetee);
+if (produitscalaire<0)
+{
+    Vecteurpropreref = -Vecteurpropreref;
+}
+if (plots) plot(Vecteurpropreref,wait=1,value=1,fill=1, cmm="Solution de reference");
+
+absVecteurpropreref = abs(Vecteurpropreref);
+
+printmessage("Calcul des erreurs et stockage dans un fichier");
+tic = clock();
+
+// Compute norms of reference solution
+real nL1=0, nL2=0, nH1=0, nMoy=0, nMax=0;
+nL1=int2d(Th)(abs(Vecteurpropreref));
+nL2=sqrt(int2d(Th)(Vecteurpropreref*Vecteurpropreref));
+nMax=absVecteurpropreref[].max;
+string printNorms = "norms: " + nL1 + "  " + nL2 + "  " + nH1 + "  " + nMax;
+
+// Compute errors and relative errors
+Vh e=0;
+Vh ErreurH1SansBordK = 0; Vh VecteurLoadedRecombined = 0;
+real eL1, eL2, eH1, eMax, elambda, eMoy, erL1, erL2, erH1, erMax, erlambda, erMoy;
+for(int k=0; k<Ntri; k++) {
+
+    vk[][k]=1;
+    int[int] n2oFine;
+	mesh Kh=trunc(Th, vk>0.5, split=1, new2old=n2oFine);
+    fespace VK(Kh,P1);
+	int[int] loc2globFine = restrict(VK, Vh, n2oFine);
+    
+    VK errK=0;
+    if (nameMethod=="P1") {
+        VK f1 = 0; f1[] = VecteurpropreHProjetee[](loc2globFine);
+        VK f2 = 0; f2[] = Vecteurpropreref[](loc2globFine);
+        errK[] = f2[] - f1[];
+        
+    } else if (CompareMsFEMMsFEMrecombined && recombinebool) {
+        //VK f1 = 0; f1[] = VecteurpropreHProjetee[](loc2globFine);
+        real[int] uhloc(VK.ndof);
+        real[int] uhlocref(VK.ndof);
+        for (int i=0; i<3; i++) {
+            int dofi = VH(k,i);
+            int storei = storeIndex(k,i);
+            uhloc += Vecteurpropremsfem[][dofi]*phiEps[storei][];
+            uhlocref += Vecteurpropremsfemtmp[][dofi]*phiEpstmp[storei][];
+        }
+
+        errK[] = uhlocref;
+
+        errK[] = errK[] - uhloc;
+        VK errKH1 = 0;
+        errKH1 = dx(errK)*dx(errK) + dy(errK)*dy(errK);
+
+        ErreurH1SansBordK[](loc2globFine) = errKH1[];
+
+    }else { // Je separe les cas car sur le bord du triangle, il faut bien que la valeur de Uhloc_K soit celle correspondant a la fonction de forme sur K et pas celle d'a cote (voir fin de online.MsFEM pour mieux comprendre)
+        //VK f1 = 0; f1[] = VecteurpropreHProjetee[](loc2globFine);
+        real[int] uhloc(VK.ndof);
+        for (int i=0; i<3; i++) {
+            int dofi = VH(k,i);
+            int storei = storeIndex(k,i);
+            uhloc += Vecteurpropremsfem[][dofi]*phiEps[storei][];
+        }
+
+        errK[] = Vecteurpropreref[](loc2globFine);
+
+        errK[] = errK[] - uhloc;
+        VK errKH1 = 0;
+        errKH1 = dx(errK)*dx(errK) + dy(errK)*dy(errK);
+
+        ErreurH1SansBordK[](loc2globFine) = errKH1[];
+    }
+
+    e[](loc2globFine) = errK[];
+
+    VK VecteurproprerefK = 0;
+    if (CompareMsFEMMsFEMrecombined && recombinebool) {
+        real[int] uhlocref(VK.ndof);
+        for (int i=0; i<3; i++) {
+            int dofi = VH(k,i);
+            int storei = storeIndex(k,i);
+            uhlocref += Vecteurpropremsfemtmp[][dofi]*phiEpstmp[storei][];
+        }
+    VecteurproprerefK[] = uhlocref;
+    VecteurLoadedRecombined[](loc2globFine) = uhlocref;
+    }
+    else {
+        VecteurproprerefK[] = Vecteurpropreref[](loc2globFine);
+    }
+
+    nMoy+=int2d(Kh)(VecteurproprerefK)*int2d(Kh)(VecteurproprerefK);
+
+    // Error computations on K
+    
+    eL1+=int2d(Kh)(abs(errK));
+    
+    eL2+=int2d(Kh)(errK*errK);
+    
+    eH1+=int2d(Kh)(dx(errK)*dx(errK)+dy(errK)*dy(errK) + errK*errK);
+    nH1+=int2d(Kh)(VecteurproprerefK*VecteurproprerefK + dx(VecteurproprerefK)*dx(VecteurproprerefK) + dy(VecteurproprerefK)*dy(VecteurproprerefK));
+
+    eMoy+=int2d(Kh)(errK)*int2d(Kh)(errK);
+    
+    errK=abs(errK);
+
+    eMax=max(errK[].max,eMax);
+    
+    vk[][k]=0;
+}
+// Taking square roots, determining the relative errors
+eL2 = sqrt(eL2);
+eH1 = sqrt(eH1);
+nH1 = sqrt(nH1);
+
+erL1=eL1/nL1;
+erL2=eL2/nL2;
+erH1=eH1/nH1;
+erMoy = sqrt(eMoy/nMoy);
+erMax=eMax/nMax;
+
+elambda = abs(lambdaH - lambdaref);
+erlambda = abs(lambdaH - lambdaref)/lambdaref;
+
+if (plots) plot(e,wait=1,value=1, cmm="error");
+
+Vh erreurH1 = 0;
+
+erreurH1 = dx(e)*dx(e) + dy(e)*dy(e) + e*e;
+
+if (plots) plot(ErreurH1SansBordK,wait=1,value=1, cmm="error, derivee");
+if (plots && CompareMsFEMMsFEMrecombined && recombinebool) plot(VecteurLoadedRecombined,wait=1,value=1, cmm="Vecteur propre comme reference");
+
+
+if ( ErreurSurK && nameMethod != "triche" && nameMethod != "P1"){
+
+    real erL2triche=-1, erH1triche=-1; // -1 if the cheating solution is not available
+    
+        Vh Vecteurpropretriche = 0;
+        Vh ErreurtricheMsFEM = 0;
+
+        printmessage("Chargement de la solution triche");
+
+        {
+            string solname = "./Solutions_reference/sol_" + "triche" + parametersREF + ".txt";
+            ifstream ff(solname);
+            ff>>Vecteurpropretriche[];
+        }
+
+        erL2triche=0; erH1triche=0; 
+
+        ErreurtricheMsFEM = Vecteurpropretriche - VecteurpropreHProjetee;
+
+        for(int k=0; k<Ntri; k++) {
+
+            vk[][k]=1;
+            int[int] n2oFine;
+            mesh Kh=trunc(Th, vk>0.5, split=1, new2old=n2oFine);
+            fespace VK(Kh,P1);
+            int[int] loc2globFine = restrict(VK, Vh, n2oFine);
+            
+            VK errK=0;
+
+            //VK f1 = 0; f1[] = VecteurpropreHProjetee[](loc2globFine);
+            real[int] uhloc(VK.ndof);
+            for (int i=0; i<3; i++) {
+                int dofi = VH(k,i);
+                int storei = storeIndex(k,i);
+                uhloc += Vecteurpropremsfem[][dofi]*phiEps[storei][];
+            }
+
+            errK[] = Vecteurpropretriche[](loc2globFine);
+            errK[] = errK[] - uhloc;
+        
+
+            erL2triche+=int2d(Kh)(errK*errK);
+            
+            erH1triche+=int2d(Kh)(dx(errK)*dx(errK)+dy(errK)*dy(errK) + errK*errK);
+
+            vk[][k]=0;
+        }
+
+        real ntricheL2=0, ntricheH1=0;
+        nL2=sqrt(int2d(Th)(Vecteurpropretriche*Vecteurpropretriche));
+        nH1=sqrt(int2d(Th)(Vecteurpropretriche*Vecteurpropretriche + dx(Vecteurpropretriche)*dx(Vecteurpropretriche) + dy(Vecteurpropretriche)*dy(Vecteurpropretriche)));
+
+        // Taking square roots, determining the relative errors
+        erL2triche = sqrt(erL2triche);
+        erH1triche = sqrt(erH1triche);
+
+        erH1triche = erH1triche/nH1;
+        erL2triche = erL2triche/nL2;
+
+    
+
+    ErrrelativeH1PhiPsiK = sqrt(eH1PhiPsi/nH1Psi);
+    ErrrelativeH1ChiPhiChiPsiK = sqrt(eH1ChiPhiChiPsi/nH1ChiPsi);
+    ErrrelativeH1PhiChiPhiPsiChiPsiK = sqrt(eH1PhiChiPhiPsiChiPsi/nH1PsiChiPsi);
+
+    ErrrelativeL2PhiPsiK = sqrt(eL2PhiPsi/nL2Psi);
+    ErrrelativeL2ChiPhiChiPsiK = sqrt(eL2ChiPhiChiPsi/nL2ChiPsi);
+    ErrrelativeL2PhiChiPhiPsiChiPsiK = sqrt(eL2PhiChiPhiPsiChiPsi/nL2PsiChiPsi);
+    
+    ErrrelativemaxK = emaxPhiPsi/nmaxPsi;
+    ErrrelativemaxcarreAepsK = emaxPhiPsicarre/nmaxPsicarre;
+
+    ErrrelativemaxVPK = ErrrelativemaxVPK/lambdaPsi;
+    ErrrelativemoyenneVPK = ErrrelativemoyenneVPK/(Ntri*lambdaPsi);
+
+    // Writing errors on K to an external file
+    string errname = "Results/erreur_patch_carre" + "_Coeffs_" + NumCoeffDiff + ".txt";
+    ofstream ff(errname, append);
+    ff  << ParameterDescription << "n\t" << n << "\t"
+        << "N\t" << Ndiscr << "\t"
+        << "n\t" << n << "\t"
+        << "NumVP\t" << NumberEigenValue << "\t"
+        << "osCoef\t" << osCoef << "\t"
+        << endl;
+
+    ff  << "\t"
+        << "eps\t" << eps << "\t"
+        << "ErH1PhiPsiK\t" << ErrrelativeH1PhiPsiK << "\t"
+        << "ErH1ChiPhiChiPsiK\t" << ErrrelativeH1ChiPhiChiPsiK << "\t"
+        << "ErH1PhiChiPhiPsiChiPsiK\t" << ErrrelativeH1PhiChiPhiPsiChiPsiK << "\t"
+        << "ErL2PhiPsiK\t" << ErrrelativeL2PhiPsiK << "\t"
+        << "ErL2ChiPhiChiPsiK\t" << ErrrelativeL2ChiPhiChiPsiK << "\t"
+        << "ErL2PhiChiPhiPsiChiPsiK\t" << ErrrelativeL2PhiChiPhiPsiChiPsiK << "\t"
+        << "ErMax\t" << ErrrelativemaxK << "\t"
+        << "ErMaxcarreAeps\t" << ErrrelativemaxcarreAepsK << "\t"        
+        << "DistanceaN\t" << DistanceaN << "\t"
+        << "ErH1U\t" << erH1 << "\t"
+        << "ErL2UtricheMsFEM\t" << erL2triche << "\t"
+        << "ErH1UtricheMsFEM\t" << erH1triche << "\t"
+        << "ErmaxVPK\t" << ErrrelativemaxVPK << "\t"
+        << "ErmoyenneVPK\t" << ErrrelativemoyenneVPK << "\t"
+        << endl;
+
+    ff<<endl;
+
+}
+
+{// Writing errors to an external file
+    string errname = "Results/errors_reaction_diffusion_" + nameMethod + "_Coeffs_" + NumCoeffDiff + ".txt";
+    ofstream ff(errname, append);
+    ff  << ParameterDescription
+        << endl
+        << "\t"
+        << "n\t" << n << "\t"
+        << "N\t" << Ndiscr << "\t"
+        << "eps\t" << eps << "\t"
+        << "NumVP\t" << NumberEigenValue << "\t"
+        << "osCoef\t" << osCoef << "\t"
+        << endl
+        << "\t\tL1\t\tL2\t\tH1\t\tmax\t\tvp\t\tL1rel\t\tL2rel\t\tH1rel\t\tmaxrel\t\tvprel\t\tMoyrel\t\t"
+        << endl;        
+    
+    ff  << "\t\t"
+        << eL1  <<"\t"<< eL2  <<"\t"<< eH1  <<"\t"<< eMax  <<"\t"<< elambda  <<"\t"
+        << erL1 <<"\t"<< erL2 <<"\t"<< erH1 <<"\t"<< erMax <<"\t"<< erlambda <<"\t"<< erMoy
+        << endl;
+    
+	ff<<endl;
+}
+toc = clock();
+
+printmessage("Temps de calcul des erreurs : " << toc - tic << " secondes ");
+
+printmessage("////////////////////////////////////////////////////////////////");

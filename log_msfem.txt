@@ -1,0 +1,14 @@
+////////////////////////////////////////////////////////////////
+// Calcul de la solution de reference avec les parametres _N_512_eps_0.125_NumVP_1_NumCoeffDiff_2
+Temps d'initialisation du maillage, et de l'espace de discretisation : 72.5429 secondes 
+Debut de la methode REF avec les parametres _N_512_eps_0.125_NumVP_1_NumCoeffDiff_2
+Temps de calcul de la solution de reference : 4.18732 secondes 
+lambda_REF = 41.406
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Calcul de la solution de reference avec les parametres _N_512_eps_0.085_NumVP_1_NumCoeffDiff_1
+Temps d'initialisation du maillage, et de l'espace de discretisation : 70.4225 secondes 
+Debut de la methode REF avec les parametres _N_512_eps_0.085_NumVP_1_NumCoeffDiff_1
+Temps de calcul de la solution de reference : 4.2115 secondes 
+lambda_REF = 36.5681
+////////////////////////////////////////////////////////////////
