@@ -1,2 +1,2 @@
 # MsFEM
-Implemantation of MsFEM for reaction-diffusion equations. In FreeFEM and Matlab.
+Implementation of MsFEM for reaction-diffusion equations. In FreeFEM and Matlab.
