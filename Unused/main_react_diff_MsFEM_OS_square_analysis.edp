@@ -1,0 +1,403 @@
+// react_diff_P1.edp
+//
+// A FreeFEM++ script that shows the usual, intrusive MsFEM approach on a simple diffusion problem
+//
+// Note that this implementation is possible mainly due to the following in-depth functionality of FreeFEM++:
+// - VK(k,i) gives the global degree of freedom of the ith local DOF in the kth triangle of the mesh
+
+//mpirun -np 1 FreeFem++-mpi -wg main_react_diff_MsFEM_OS_square_analysis.edp -v 0
+
+string nameMethod = "MsFEM_OS_carre";
+
+include "init.edp"
+
+///////////////////////////////////////////////////////////////////////
+// Offline stage                                                     //
+// - Computation of multiscale basis functions                       //
+// - Computation of stiffness matrix                                 //
+//(- The discrete right-hand side is also computed here)             //
+///////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////
+// - Computation of multiscale basis functions                       //
+///////////////////////////////////////////////////////////////////////
+
+printmessage("Construction des fonctions de forme ");
+
+include "Psi_triche.edp"
+
+Psieps = VecteurproprePsi(fmod(x/eps,1), fmod(y/eps,1)) ;
+real Variationsmax = 0;
+real Variationsmoyenne = 0;
+real Variationcarre = 0;
+if (ErreurSurK) {
+
+    nmaxPsi = VecteurproprePsi[].max;
+    Vh AepsPsicarre = Aeps*Psieps*Psieps;
+    nmaxPsicarre = AepsPsicarre[].max;
+    nH1Psi=int2d(Th)(dx(Psieps)*dx(Psieps)+dy(Psieps)*dy(Psieps) + Psieps*Psieps);
+    nL2Psi=int2d(Th)(Psieps*Psieps);
+}
+
+tic = clock();
+
+for (int k=0; k<Ntri; k++) { //Ntri = nombre de triangles du maillage grossier
+
+    vk[][k]=1;
+    // Defining the vertices of the ideal oversampling patch (possibly lying partially outside the global domain)
+    real[int,int] Kx(3,2); //save coordinates of the vertices belonging to K
+    for(int kk=0; kk<3; kk++) {
+        Kx(kk,0) = TH[k][kk].x;
+        Kx(kk,1) = TH[k][kk].y;
+    }
+    real[int,int] Sx(3,2); //compute coordinates for the ideal oversampling patch by homothety
+    for(int kk=0; kk<3; kk++) {
+        Sx(kk,0) = (osCoef)*(Kx(kk,0) - xb[][k]) + xb[][k];
+        Sx(kk,1) = (osCoef)*(Kx(kk,1) - yb[][k]) + yb[][k];
+    }
+
+    // Construction of a patch-container C around S that is (much) smaller than Omega
+    int NxC = Nx/nx;
+    int NyC = Ny/ny;
+
+    real xCL = (floor(Sx(:,0).min/hx)-1)*hx; //we take a small margin around the vertices of S as computed above
+
+    real xCR = (ceil(Sx(:,0).max/hx)+1)*hx;
+
+    real yCL = (floor(Sx(:,1).min/hy)-1)*hy;
+
+    real yCR = (ceil(Sx(:,1).max/hy)+1)*hy;
+
+    if (PriseEnCompteBord){
+
+        xCL = max(0.,xCL); //ensure that the patch-container is a subset of the global domain
+        xCR = min(Lx, xCR);
+        yCL = max(0., yCL);
+        yCR = min(Ly, yCR);
+
+            if (CentrePatchCarre){
+
+                real osCoefCentre ;
+                real DX = max(abs(Kx(0,0) - xb[][k]),abs(Kx(1,0) - xb[][k]), abs(Kx(2,0) - xb[][k])) ;
+                real DY = max(abs(Kx(0,1) - yb[][k]),abs(Kx(1,1) - yb[][k]), abs(Kx(2,1) - yb[][k])) ;
+                real OS1 = (xb[][k] - xCL)/abs(Kx(0,0) - xb[][k]);
+                osCoefCentre = min(OS1, osCoef);
+                real OS2 = (xCR - xb[][k])/abs(Kx(1,0) - xb[][k]) ;
+                osCoefCentre = min(OS2, osCoefCentre);
+                real OS3 = (yb[][k] - yCL)/abs(Kx(0,1) - yb[][k]) ;
+                osCoefCentre = min(OS3, osCoefCentre);
+                real OS4 = (yCR - yb[][k])/abs(Kx(2,1) - yb[][k]) ;
+                osCoefCentre = min(OS4, osCoefCentre);
+
+                for(int kk=0; kk<3; kk++) {
+                    Sx(kk,0) = (osCoefCentre)*(Kx(kk,0) - xb[][k]) + xb[][k];
+                    Sx(kk,1) = (osCoefCentre)*(Kx(kk,1) - yb[][k]) + yb[][k];
+            }
+                // Construction of a patch-container C around S that is (much) smaller than Omega
+                xCL = (floor(Sx(:,0).min/hx)-1)*hx; //we take a small margin around the vertices of S as computed above
+
+                xCR = (ceil(Sx(:,0).max/hx)+1)*hx;
+
+                yCL = (floor(Sx(:,1).min/hy)-1)*hy;
+
+                yCR = (ceil(Sx(:,1).max/hy)+1)*hy;
+
+                xCL = max(0.,xCL); //ensure that the patch-container is a subset of the global domain
+                xCR = min(Lx, xCR);
+                yCL = max(0., yCL);
+                yCR = min(Ly, yCR);
+
+            }
+    }
+
+
+    real dxC = xCR - xCL;
+    int dxCn = lrint(dxC/hx); //integer closest to dxC/hx -- ensures that the mesh C defined below is compatible with Th
+    real dyC = yCR - yCL;
+    int dyCn = lrint(dyC/hy);
+
+    mesh C=square(dxCn, dyCn, [xCL + dxC*x, yCL + dyC*y]);
+    fespace VC(C, P1, periodic=[[2, y], [4, y], [1, x], [3, x]]);
+
+
+
+    // Construction of the actual coarse mesh element K inside of the patch
+    int[int] S2K;
+    mesh K=trunc(C,vk>0.5,split=1,label=1,new2old=S2K); 
+    fespace VK(K,P1);
+    int[int] RS2K = restrict(VK,VC,S2K); //array for the restriction of a function on S to K
+
+    if (debug) {
+        plot(C, vk, fill=1, cmm="Mesh element and oversampling patch", wait=1);
+        plot(C, K, cmm="Coarse mesh element", wait=1);
+        }
+    
+    // Problem
+    varf oploc (u, v)
+        = int2d(C)(
+            sigmaeps(x,y)*u*v)
+        + int2d(C)(eps^2*a(Aeps(x,y),u,v))
+        ;
+
+    varf bloc (u, v) = int2d(C)(u*v); //no boundary condition
+
+    matrix<real> AlocS = oploc(VC, VC, factorize=1); 
+    matrix<real> BlocS = bloc(VC, VC, solver=CG, eps=1e-20);
+
+    Mat Aloctemp = AlocS;
+    Mat Bloctemp = BlocS;
+
+    real[int] Listelambdaloc(1); //to store the nev eigenvalue (nev = 1 ici)
+    VC[int] ListeVecteurproprelocS(1); //to store the nev eigenvector
+
+    int kloc = EPSSolve(Aloctemp, Bloctemp, vectors = ListeVecteurproprelocS, values  = Listelambdaloc, sparams = ssparams); //Résolution du pb aux vp
+    kloc=min(kloc,1);
+
+    VC VecteurproprelocS;
+    VecteurproprelocS[] = ListeVecteurproprelocS[0][];
+
+    real ValeurproprelocS = Listelambdaloc[0];;
+
+    VC absVecteurproprelocS = abs(VecteurproprelocS);
+    if (VecteurproprelocS[].max/absVecteurproprelocS[].max<0.9)  //Evaluation au point milieu
+    {
+        VecteurproprelocS = -VecteurproprelocS;
+    }
+
+    VK VecteurproprelocK=0;
+    VecteurproprelocK[] = VecteurproprelocS[](RS2K);
+    VK absVecteurproprelocK = abs(VecteurproprelocK);
+    if (VecteurproprelocK[].max/absVecteurproprelocK[].max<0.9)  //Evaluation au point milieu
+    {
+        VecteurproprelocK = -VecteurproprelocK;
+    }
+    // Renormalisation
+    real normeL2locK=sqrt(int2d(K)(VecteurproprelocK*VecteurproprelocK));
+    VecteurproprelocK[] = VecteurproprelocK[]/(normeL2locK/sqrt(int2d(K)(1)));
+
+    Variationsmax = max(VecteurproprelocK[].max - VecteurproprelocK[].min, Variationsmax);
+    Variationsmoyenne += VecteurproprelocK[].max - VecteurproprelocK[].min;
+    Variationcarre += (VecteurproprelocK[].max - VecteurproprelocK[].min)*(VecteurproprelocK[].max - VecteurproprelocK[].min);
+
+    //Construction des 3 fonctions de forme associées à l'élément K
+    VK[int] phi(3); //storage of local basis function contributions in the offline loop
+    VK[int] phiPsi(3); //storage of local basis function contributions in the offline loop
+    // Resolution of local problems
+	varf defMS(uh,vh) = int2d(K)(VecteurproprelocK^2*a(Aeps,uh,vh)) + int1d(K)(tgv*uh*vh);
+    matrix Aloc=defMS(VK,VK);
+	set(Aloc, solver=UMFPACK);
+
+    varf defMSPsi(uhPsi,vhPsi) = int2d(K)(Psieps^2*a(Aeps,uhPsi,vhPsi)) + int1d(K)(tgv*uhPsi*vhPsi);
+    matrix AlocPsi=defMSPsi(VK,VK);
+    set(AlocPsi, solver=UMFPACK);
+	VH bc=0; //will hold the boundary condition for local problems
+	for (int i=0; i<3; i++) {
+		int storei = storeIndex(k,i); //indice pour la liste des fonctions Phieps, correspondant au i-ème sommet du k-ième triangle
+		int dofi = VH(k,i); // the index in VH associated to vertex i of triangle k
+		bc[][dofi] = 1;
+		varf rhsloc(unused,vh) = int1d(K)(tgv*bc*vh);
+		VK Bloc; Bloc[] = rhsloc(0,VK);
+
+        phiPsi[i][] = AlocPsi^-1*Bloc[];
+		phi[i][] = Aloc^-1*Bloc[];
+		bc[][dofi]=0;
+
+        if (debug){
+            plot(phi[i],wait=1,value=1,fill=1, cmm="fonction forme ChiPhi");
+            plot(phiPsi[i],wait=1,value=1,fill=1, cmm="fonction forme ChiPsi");
+        }
+
+        if (ErreurSurK) {
+
+            VK PsiepsK = 0;
+            PsiepsK = Psieps(x,y);
+
+            VK ChiPsi = phiPsi[i];
+            VK ChiPhi = phi[i];
+            VK PsiChiPsi = ChiPsi*PsiepsK;
+            VK PhiChiPhi = ChiPhi*VecteurproprelocK;
+            VK DiffChiPsiChiPhi = ChiPhi - ChiPsi;
+            VK DiffPsiChiPsiPhiChiPhi = PhiChiPhi - PsiChiPsi;
+
+
+            eH1ChiPhiChiPsi += int2d(K)(dx(DiffChiPsiChiPhi)*dx(DiffChiPsiChiPhi)+dy(DiffChiPsiChiPhi)*dy(DiffChiPsiChiPhi) + DiffChiPsiChiPhi*DiffChiPsiChiPhi);
+            eH1PhiChiPhiPsiChiPsi += int2d(K)(dx(DiffPsiChiPsiPhiChiPhi)*dx(DiffPsiChiPsiPhiChiPhi)+dy(DiffPsiChiPsiPhiChiPhi)*dy(DiffPsiChiPsiPhiChiPhi) + DiffPsiChiPsiPhiChiPhi*DiffPsiChiPsiPhiChiPhi);
+
+            eL2ChiPhiChiPsi += int2d(K)(DiffChiPsiChiPhi*DiffChiPsiChiPhi);
+            eL2PhiChiPhiPsiChiPsi += int2d(K)(DiffPsiChiPsiPhiChiPhi*DiffPsiChiPsiPhiChiPhi);
+
+            nH1ChiPsi += int2d(K)(dx(ChiPsi)*dx(ChiPsi)+dy(ChiPsi)*dy(ChiPsi) + ChiPsi*ChiPsi);
+            nH1PsiChiPsi += int2d(K)(dx(PsiChiPsi)*dx(PsiChiPsi)+dy(PsiChiPsi)*dy(PsiChiPsi) + PsiChiPsi*PsiChiPsi);
+
+            nL2ChiPsi += int2d(K)(ChiPsi*ChiPsi);
+            nL2PsiChiPsi += int2d(K)(PsiChiPsi*PsiChiPsi);
+
+            if (plots & debugprecis & (k > 17) ){
+
+                VK DiffPhiPsiK = VecteurproprelocK - PsiepsK;
+                DiffPhiPsiK = abs(DiffPhiPsiK);
+                plot(C, vk, fill=1, cmm="Mesh element and oversampling patch", wait=1); //patch carré
+                plot(C, K, cmm="Coarse mesh element", wait=1); //élément grossier
+                plot(VecteurproprelocS, value=1, cmm="Local eigenvector Phieps on S", wait=1); //vecteur propre local Phieps sur patch carré
+                plot(VecteurproprelocK, value=1, cmm="Local eigenvector Phieps on K", wait=1); //vecteur propre local Phieps sur élément grossier
+                plot(PsiepsK, value=1, cmm="Local eigenvector Psi on K", wait=1); //vecteur propre local Psi sur élément grossier
+                plot(DiffPhiPsiK, value=1, cmm="Derivative of the difference between Phieps and Psi on K", wait=1); //dérivée de la différence entre Phieps et Psi sur élément grossier
+
+                printmessage("Semi Norme H1 de la derivee de Psi : " << sqrt(int2d(K)(dx(PsiepsK)*dx(PsiepsK)+dy(PsiepsK)*dy(PsiepsK))) );
+                printmessage("Norme L2 de la derivee de Psi : " << sqrt(int2d(K)(PsiepsK*PsiepsK)) );
+                printmessage("Semi Norme H1 de la difference : " << sqrt(int2d(K)(dx(DiffPhiPsiK)*dx(DiffPhiPsiK)+dy(DiffPhiPsiK)*dy(DiffPhiPsiK))) );
+                printmessage("Norme L2 de la difference : " << sqrt(int2d(K)(DiffPhiPsiK*DiffPhiPsiK)) );
+                printmessage("Erreur relative H1 sur K : " << sqrt((int2d(K)(dx(DiffPhiPsiK)*dx(DiffPhiPsiK)+dy(DiffPhiPsiK)*dy(DiffPhiPsiK) + DiffPhiPsiK*DiffPhiPsiK))/(int2d(K)(dx(PsiepsK)*dx(PsiepsK)+dy(PsiepsK)*dy(PsiepsK) + PsiepsK*PsiepsK))) );
+            }
+            if (i==0){
+
+                VK DiffPhiPsiK = VecteurproprelocK - PsiepsK;
+
+                eH1PhiPsi += int2d(K)(dx(DiffPhiPsiK)*dx(DiffPhiPsiK)+dy(DiffPhiPsiK)*dy(DiffPhiPsiK) + DiffPhiPsiK*DiffPhiPsiK);
+                eL2PhiPsi += int2d(K)(DiffPhiPsiK*DiffPhiPsiK);
+
+                DiffPhiPsiK = abs(DiffPhiPsiK);
+
+                VK DiffPhiPsiKcarre = VecteurproprelocK*VecteurproprelocK - PsiepsK*PsiepsK;
+                VK DiffPhiPsiKcarreAeps = Aeps*DiffPhiPsiKcarre;
+                DiffPhiPsiKcarreAeps = abs(DiffPhiPsiKcarreAeps);
+                emaxPhiPsi = max(DiffPhiPsiK[].max, emaxPhiPsi);
+                emaxPhiPsicarre = max(DiffPhiPsiKcarreAeps[].max, emaxPhiPsicarre);
+
+                ErrrelativemaxVPK = max(abs(ValeurproprelocS - lambdaPsi), ErrrelativemaxVPK);
+                ErrrelativemoyenneVPK += abs(ValeurproprelocS - lambdaPsi);
+
+                if (debug & (k == 17)){
+                    printmessage(" ");
+                    printmessage("k = " << k );
+                    printmessage("Norme L2 de Psieps - 1 : " << sqrt(int2d(K)((PsiepsK - 1)*(PsiepsK - 1) )) );
+                    printmessage("Norme L2 de Phieps - 1 : " << sqrt(int2d(K)((VecteurproprelocK - 1)*(VecteurproprelocK - 1) )) );
+                    printmessage("Norme de la derivee de Psi : " << sqrt(int2d(K)(dx(PsiepsK)*dx(PsiepsK)+dy(PsiepsK)*dy(PsiepsK))) );
+                    printmessage("Norme de la derivee de Phi : " << sqrt(int2d(K)(dx(VecteurproprelocK)*dx(VecteurproprelocK)+dy(VecteurproprelocK)*dy(VecteurproprelocK))) );
+                    printmessage("Norme L2 de Phi - Psi : " << sqrt(int2d(K)(DiffPhiPsiK*DiffPhiPsiK)) );
+                    printmessage("Erreur relative H1 de Phi - Psi : " << sqrt((int2d(K)(dx(DiffPhiPsiK)*dx(DiffPhiPsiK)+dy(DiffPhiPsiK)*dy(DiffPhiPsiK) + DiffPhiPsiK*DiffPhiPsiK))/(int2d(K)(dx(PsiepsK)*dx(PsiepsK)+dy(PsiepsK)*dy(PsiepsK) + PsiepsK*PsiepsK))) );
+                    printmessage("Erreur relative semi norme H1 de Phi - Psi : " << sqrt((int2d(K)(dx(DiffPhiPsiK)*dx(DiffPhiPsiK)+dy(DiffPhiPsiK)*dy(DiffPhiPsiK)))/(int2d(K)(dx(PsiepsK)*dx(PsiepsK)+dy(PsiepsK)*dy(PsiepsK))) ));
+                    printmessage("Numerateur Erreur relative semi norme H1 de Phi - Psi : " << sqrt((int2d(K)(dx(DiffPhiPsiK)*dx(DiffPhiPsiK)+dy(DiffPhiPsiK)*dy(DiffPhiPsiK)))));
+                    printmessage("Denominateur Erreur relative semi norme H1 de Phi - Psi : " << sqrt((int2d(K)(dx(PsiepsK)*dx(PsiepsK)+dy(PsiepsK)*dy(PsiepsK))) ));
+                    
+                    
+                    printmessage("Erreur relative H1 de PhiChiPhi - PsiChiPsi" << sqrt((int2d(K)(dx(DiffPsiChiPsiPhiChiPhi)*dx(DiffPsiChiPsiPhiChiPhi)+dy(DiffPsiChiPsiPhiChiPhi)*dy(DiffPsiChiPsiPhiChiPhi) + DiffPsiChiPsiPhiChiPhi*DiffPsiChiPsiPhiChiPhi))/(int2d(K)(dx(PsiChiPsi)*dx(PsiChiPsi)+dy(PsiChiPsi)*dy(PsiChiPsi) + PsiChiPsi*PsiChiPsi)) ));
+                    printmessage("Erreur relative semi norme H1 de PhiChiPhi - PsiChiPsi" << sqrt((int2d(K)(dx(DiffPsiChiPsiPhiChiPhi)*dx(DiffPsiChiPsiPhiChiPhi)+dy(DiffPsiChiPsiPhiChiPhi)*dy(DiffPsiChiPsiPhiChiPhi)))/(int2d(K)(dx(PsiChiPsi)*dx(PsiChiPsi)+dy(PsiChiPsi)*dy(PsiChiPsi)))) );
+                    
+                    VK PhiChiPsi = ChiPsi*VecteurproprelocK;
+                    VK DiffPsiChiPsiPhiChiPsi = PhiChiPsi - PsiChiPsi;
+                    printmessage("Erreur relative H1 de PhiChiPsi - PsiChiPsi" << sqrt((int2d(K)(dx(DiffPsiChiPsiPhiChiPsi)*dx(DiffPsiChiPsiPhiChiPsi)+dy(DiffPsiChiPsiPhiChiPsi)*dy(DiffPsiChiPsiPhiChiPsi) + DiffPsiChiPsiPhiChiPsi*DiffPsiChiPsiPhiChiPsi))/(int2d(K)(dx(PsiChiPsi)*dx(PsiChiPsi)+dy(PsiChiPsi)*dy(PsiChiPsi) + PsiChiPsi*PsiChiPsi))) );
+                    printmessage("Erreur relative semi norme H1 de PhiChiPsi - PsiChiPsi" << sqrt((int2d(K)(dx(DiffPsiChiPsiPhiChiPsi)*dx(DiffPsiChiPsiPhiChiPsi)+dy(DiffPsiChiPsiPhiChiPsi)*dy(DiffPsiChiPsiPhiChiPsi)))/(int2d(K)(dx(PsiChiPsi)*dx(PsiChiPsi)+dy(PsiChiPsi)*dy(PsiChiPsi)))) );
+                    printmessage(" ");
+                    printmessage("Erreur relative semi norme H1 de PhiChiPsi - PsiChiPsi devellopee" << sqrt((int2d(K)(( dx(ChiPsi)*DiffPhiPsiK  + dx(DiffPhiPsiK)*ChiPsi)*(dx(ChiPsi)*DiffPhiPsiK  + dx(DiffPhiPsiK)*ChiPsi) + ( dy(ChiPsi)*DiffPhiPsiK  + dy(DiffPhiPsiK)*ChiPsi)*(dy(ChiPsi)*DiffPhiPsiK  + dy(DiffPhiPsiK)*ChiPsi) ))/(int2d(K)(( dx(ChiPsi)*PsiepsK  + dx(PsiepsK)*ChiPsi)*(dx(ChiPsi)*PsiepsK  + dx(PsiepsK)*ChiPsi) + ( dy(ChiPsi)*PsiepsK  + dy(PsiepsK)*ChiPsi)*(dy(ChiPsi)*PsiepsK  + dy(PsiepsK)*ChiPsi) ))) );
+                
+                    printmessage("Erreur relative semi norme H1 de PhiChiPsi - PsiChiPsi 1 terme" << sqrt((int2d(K)(( dx(ChiPsi)*DiffPhiPsiK  )*(dx(ChiPsi)*DiffPhiPsiK  ) + ( dy(ChiPsi)*DiffPhiPsiK )*(dy(ChiPsi)*DiffPhiPsiK ) ))) );
+                    printmessage("Erreur relative semi norme H1 de PhiChiPsi - PsiChiPsi 2 terme" << sqrt((int2d(K)(( dx(DiffPhiPsiK)*ChiPsi)*(dx(DiffPhiPsiK)*ChiPsi) + (  dy(DiffPhiPsiK)*ChiPsi)*( dy(DiffPhiPsiK)*ChiPsi) ))) );
+                    printmessage("Erreur relative semi norme H1 de PhiChiPsi - PsiChiPsi 3 terme" << sqrt((int2d(K)(( dx(ChiPsi)*PsiepsK  *(dx(ChiPsi)*PsiepsK  ) + ( dy(ChiPsi)*PsiepsK )*(dy(ChiPsi)*PsiepsK ) ))) ));
+                    printmessage("Erreur relative semi norme H1 de PhiChiPsi - PsiChiPsi 4 terme" << sqrt((int2d(K)(( dx(PsiepsK)*ChiPsi)*(dx(PsiepsK)*ChiPsi) + (dy(PsiepsK)*ChiPsi)*(dy(PsiepsK)*ChiPsi) ))) );
+
+                    printmessage(" ");
+                    printmessage("Semi Norme H1 de la difference : " << sqrt((int2d(K)(dx(DiffPhiPsiK)*dx(DiffPhiPsiK)+dy(DiffPhiPsiK)*dy(DiffPhiPsiK)))/(int2d(K)(dx(PsiepsK)*dx(PsiepsK)+dy(PsiepsK)*dy(PsiepsK)))) );
+                    printmessage("Norme L2 de la difference : " << sqrt((int2d(K)( DiffPhiPsiK*DiffPhiPsiK))/(int2d(K)( PsiepsK*PsiepsK))) );
+
+                    printmessage(" ");
+                    printmessage("Norme L2 gradient ChiPsi : " << sqrt(int2d(K)(dx(ChiPsi)*dx(ChiPsi)+dy(ChiPsi)*dy(ChiPsi))) );
+
+                    printmessage(" ");
+                    printmessage("Norme L2 gradient approximee : " << sqrt(int2d(K)((DiffPhiPsiK + 0.125*(dx(DiffPhiPsiK))*ChiPsi) * (DiffPhiPsiK + 0.125*(dy(DiffPhiPsiK))*ChiPsi))/(int2d(K)(1))) );
+                }
+            }
+
+            real partieentiere = floor(2*Hx/eps);
+
+            DistanceaN = min(2*Hx/eps-partieentiere, partieentiere+1-2*Hx/eps);
+
+            //printmessage("Distance entre 2H/eps et N : " << DistanceaN );
+        }
+
+
+
+
+
+        phi[i][]=phi[i][].*VecteurproprelocK[];
+        phiPsi[i][] = phiPsi[i][].*Psieps[];
+        if (debug){
+            plot(phi[i],wait=1,value=1,fill=1, cmm="fonction forme Phi*ChiPhi");
+            plot(phiPsi[i],wait=1,value=1,fill=1, cmm="fonction forme Psi*ChiPsi");
+        }
+
+        phiEps[storei][] = phi[i][]; // save basis functions for multiscale reconstruction below
+
+
+
+
+        /*
+        //Recherche de l'indice du noeud i du triangle k, dans le maillage VK
+        int indicenoeudphi = -1;
+        for (int l=0; l<phi[i][].n; l++ ) {
+            
+            if( (1 - 1e-10 < phi[i][][l]) & (phi[i][][l] < 1 + 1e-10) ){
+                if(indicenoeudphi != -1){
+                    printmessage("erreur 1 dans la renormalisation des fonctions de forme")
+                    cout << indicenoeudphi << " " << l << " "<< i << " "<< k << " "<< endl;
+        }
+                indicenoeudphi = l;
+        }
+        }
+        if(indicenoeudphi == -1){
+            printmessage("erreur 2 dans la renormalisation des fonctions de forme")
+        }
+        real CstRenormalisation = phi[i][][indicenoeudphi];
+        CstRenormalisation = 1;
+        if (CstRenormalisation > 0.1){
+            phi[i][]=phi[i][]/CstRenormalisation;
+        }        
+        if (debug){
+            plot(phi[i],wait=1,value=1,fill=1, cmm="fonction forme Chi*Phi renormalisee");
+        }
+
+        indicenoeudphi = -1;
+        */
+	}
+	// Computation of matrix elements
+	for (int j=0; j<3; j++)
+	{ //loop over all corners for matrix contributions on K
+        int dofj = VH(k,j);
+		for (int i=0; i<3; i++) {
+			// int ii = contr[i]; // seems superfluous ???
+			// Find global DOF index for trial functions j and test function i,
+			// compute matrix contributions,
+			// save these in Imat[nnz], Jmat[nnz] and Mmat[nnz]
+			Imat[nnz] = VH(k,i);
+			Jmat[nnz] = dofj;
+			Amat[nnz] = int2d(K)(sigmaeps*phi[i]*phi[j]) + int2d(K)(eps^2*a(Aeps, phi[i], phi[j])); 
+            Bmat[nnz] = int2d(K)(phi[i]*phi[j]);
+			nnz++;
+		}
+	}
+	vk[][k]=0;
+}
+toc = clock();
+
+if (debug){
+    printmessage("Variations maximum des PhiK sur les patchs : " << Variationsmax);
+    printmessage("Variations moyennes des PhiK sur les patchs : " << Variationsmoyenne/Ntri);
+    printmessage("Variation carree des PhiK sur les patchs : " << sqrt(Variationcarre/Ntri));
+}
+
+printmessage("Temps de construction des fonctions de forme : " << toc - tic << " secondes ");
+
+///////////////////////////////////////////////////////////////////////
+// Online stage                                                      //
+///////////////////////////////////////////////////////////////////////
+
+include "online_MsFEM.edp"
+
+///////////////////////////////////////////////////////////////////////
+// Reference solution and error computation                          //
+///////////////////////////////////////////////////////////////////////
+
+// Load or compute reference solution
+
+include "post.edp"

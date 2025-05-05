@@ -1,0 +1,244 @@
+// react_diff_P1.edp
+//
+// A FreeFEM++ script that shows the usual, intrusive MsFEM approach on a simple diffusion problem
+//
+// Note that this implementation is possible mainly due to the following in-depth functionality of FreeFEM++:
+// - VK(k,i) gives the global degree of freedom of the ith local DOF in the kth triangle of the mesh
+
+//mpirun -np 1 FreeFem++-mpi -wg main_react_diff_MsFEM_OS_square.edp -v 0
+
+string nameMethod = "MsFEM_OS_carre";
+
+include "init.edp"
+
+///////////////////////////////////////////////////////////////////////
+// Offline stage                                                     //
+// - Computation of multiscale basis functions                       //
+// - Computation of stiffness matrix                                 //
+//(- The discrete right-hand side is also computed here)             //
+///////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////
+// - Computation of multiscale basis functions                       //
+///////////////////////////////////////////////////////////////////////
+
+printmessage("Construction des fonctions de forme ");
+
+tic = clock();
+
+for (int k=0; k<Ntri; k++) { //Ntri = nombre de triangles du maillage grossier
+
+    vk[][k]=1;
+    // Defining the vertices of the ideal oversampling patch (possibly lying partially outside the global domain)
+    real[int,int] Kx(3,2); //save coordinates of the vertices belonging to K
+    for(int kk=0; kk<3; kk++) {
+        Kx(kk,0) = TH[k][kk].x;
+        Kx(kk,1) = TH[k][kk].y;
+    }
+    real[int,int] Sx(3,2); //compute coordinates for the ideal oversampling patch by homothety
+    for(int kk=0; kk<3; kk++) {
+        Sx(kk,0) = (osCoef)*(Kx(kk,0) - xb[][k]) + xb[][k];
+        Sx(kk,1) = (osCoef)*(Kx(kk,1) - yb[][k]) + yb[][k];
+    }
+
+    // Construction of a patch-container C around S that is (much) smaller than Omega
+    int NxC = Nx/nx;
+    int NyC = Ny/ny;
+
+    real xCL = (floor(Sx(:,0).min/hx)-1)*hx; //we take a small margin around the vertices of S as computed above
+
+    real xCR = (ceil(Sx(:,0).max/hx)+1)*hx;
+
+    real yCL = (floor(Sx(:,1).min/hy)-1)*hy;
+
+    real yCR = (ceil(Sx(:,1).max/hy)+1)*hy;
+
+    if (PriseEnCompteBord){
+
+        xCL = max(0.,xCL); //ensure that the patch-container is a subset of the global domain
+        xCR = min(Lx, xCR);
+        yCL = max(0., yCL);
+        yCR = min(Ly, yCR);
+
+            if (CentrePatchCarre){
+
+                real osCoefCentre ;
+                real DX = max(abs(Kx(0,0) - xb[][k]),abs(Kx(1,0) - xb[][k]), abs(Kx(2,0) - xb[][k])) ;
+                real DY = max(abs(Kx(0,1) - yb[][k]),abs(Kx(1,1) - yb[][k]), abs(Kx(2,1) - yb[][k])) ;
+                real OS1 = (xb[][k] - xCL)/abs(Kx(0,0) - xb[][k]);
+                osCoefCentre = min(OS1, osCoef);
+                real OS2 = (xCR - xb[][k])/abs(Kx(1,0) - xb[][k]) ;
+                osCoefCentre = min(OS2, osCoefCentre);
+                real OS3 = (yb[][k] - yCL)/abs(Kx(0,1) - yb[][k]) ;
+                osCoefCentre = min(OS3, osCoefCentre);
+                real OS4 = (yCR - yb[][k])/abs(Kx(2,1) - yb[][k]) ;
+                osCoefCentre = min(OS4, osCoefCentre);
+
+                for(int kk=0; kk<3; kk++) {
+                    Sx(kk,0) = (osCoefCentre)*(Kx(kk,0) - xb[][k]) + xb[][k];
+                    Sx(kk,1) = (osCoefCentre)*(Kx(kk,1) - yb[][k]) + yb[][k];
+            }
+                // Construction of a patch-container C around S that is (much) smaller than Omega
+                xCL = (floor(Sx(:,0).min/hx)-1)*hx; //we take a small margin around the vertices of S as computed above
+
+                xCR = (ceil(Sx(:,0).max/hx)+1)*hx;
+
+                yCL = (floor(Sx(:,1).min/hy)-1)*hy;
+
+                yCR = (ceil(Sx(:,1).max/hy)+1)*hy;
+
+                xCL = max(0.,xCL); //ensure that the patch-container is a subset of the global domain
+                xCR = min(Lx, xCR);
+                yCL = max(0., yCL);
+                yCR = min(Ly, yCR);
+
+            }
+    }
+
+
+    real dxC = xCR - xCL;
+    int dxCn = lrint(dxC/hx); //integer closest to dxC/hx -- ensures that the mesh C defined below is compatible with Th
+    real dyC = yCR - yCL;
+    int dyCn = lrint(dyC/hy);
+
+    mesh C=square(dxCn, dyCn, [xCL + dxC*x, yCL + dyC*y]);
+    fespace VC(C, P1, periodic=[[2, y], [4, y], [1, x], [3, x]]);
+
+
+
+    // Construction of the actual coarse mesh element K inside of the patch
+    int[int] S2K;
+    mesh K=trunc(C,vk>0.5,split=1,label=1,new2old=S2K); 
+    fespace VK(K,P1);
+    int[int] RS2K = restrict(VK,VC,S2K); //array for the restriction of a function on S to K
+
+    if (debug){
+        plot(C, vk, fill=1, cmm="Mesh element and oversampling patch", wait=1);
+        plot(C, K, cmm="Coarse mesh element", wait=1);
+        VC aplotS=Aeps(x,y);
+        plot(aplotS, value=1, cmm="Diffusion coefficient on S", wait=1);
+
+        }
+    
+    //printmessage("moyenne de sigmaeps sur le patch S : " << int2d(C)(sigmaeps)/int2d(C)(1));
+    //printmessage("moyenne de a sur le patch S : " << int2d(C)(Aeps)/int2d(C)(1));
+    // Problem
+    varf oploc (u, v)
+        = int2d(C)(
+            sigmaeps(x,y)*u*v)
+        + int2d(C)(eps^2*a(Aeps(x,y),u,v))
+        ;
+
+    varf bloc (u, v) = int2d(C)(u*v); //no boundary condition
+
+    matrix<real> AlocS = oploc(VC, VC, factorize=1); 
+    matrix<real> BlocS = bloc(VC, VC, solver=CG, eps=1e-20);
+
+    Mat Aloctemp = AlocS;
+    Mat Bloctemp = BlocS;
+
+    real[int] Listelambdaloc(1); //to store the nev eigenvalue (nev = 1 ici)
+    VC[int] ListeVecteurproprelocS(1); //to store the nev eigenvector
+
+    int kloc = EPSSolve(Aloctemp, Bloctemp, vectors = ListeVecteurproprelocS, values  = Listelambdaloc, sparams = ssparams); //Résolution du pb aux vp
+    kloc=min(kloc,1);
+
+    VC VecteurproprelocS;
+    VecteurproprelocS[] = ListeVecteurproprelocS[0][];
+
+
+    VK VecteurproprelocK=0;
+    VecteurproprelocK[] = VecteurproprelocS[](RS2K);
+
+    VK absVecteurproprelocK = abs(VecteurproprelocK);
+    if (VecteurproprelocK[].max/absVecteurproprelocK[].max<0.9)  //Evaluation au point milieu
+    {
+        VecteurproprelocK = -VecteurproprelocK;
+    }
+    // Renormalisation
+    real normeL2locK=sqrt(int2d(K)(VecteurproprelocK*VecteurproprelocK));
+    VecteurproprelocK[] = VecteurproprelocK[]/(normeL2locK/sqrt(int2d(K)(1)));
+
+    if (k==20 && plots) {
+        plot(C, vk, fill=1, cmm="Mesh element and oversampling patch", wait=1);
+        plot(C, K, cmm="Coarse mesh element", wait=1);
+        VC aplotS=Aepsrecombine(x,y);
+        VC sigmaplotS = sigmaepsrecombine(x,y);
+        plot(aplotS, value=1, cmm="Diffusion coefficient on S", wait=1);
+        plot(sigmaplotS, value=1, cmm="Sigma coefficient on S", wait=1);
+        plot(VecteurproprelocS, fill=1, value=1, cmm="Premier vecteur propre", wait=1);
+        plot(VecteurproprelocK, fill=1, value=1, cmm="Vecteur propre loc K", wait=1);
+    }    
+    //Construction des 3 fonctions de forme associées à l'élément K
+    VK[int] phi(3); //storage of local basis function contributions in the offline loop
+    // Resolution of local problems
+	varf defMS(uh,vh) = int2d(K)(VecteurproprelocK^2*a(Aeps,uh,vh)) + int1d(K)(tgv*uh*vh);
+    matrix Aloc=defMS(VK,VK);
+	set(Aloc, solver=UMFPACK);
+	VH bc=0; //will hold the boundary condition for local problems
+	for (int i=0; i<3; i++) {
+        int dofi = VH(k,i); // the index in VH associated to vertex i of triangle k
+		bc[][dofi] = 1;
+		varf rhsloc(unused,vh) = int1d(K)(tgv*bc*vh);
+		VK Bloc; Bloc[] = rhsloc(0,VK);
+		phi[i][] = Aloc^-1*Bloc[];
+		bc[][dofi]=0;
+
+		int storei = 0;//indice pour la liste des fonctions Phieps, correspondant au i-ème sommet du k-ième triangle
+        if (recombinebool){
+            storei = storeIndex(recombine(k,Ntri),i); //indice pour la liste des fonctions Phieps, correspondant au i-ème sommet du k-ième triangle
+        } else {
+            storei = storeIndex(k,i); //indice pour la liste des fonctions Phieps, correspondant au i-ème sommet du k-ième triangle
+        }
+        if (debug){
+            plot(phi[i],wait=1,value=1,fill=1, cmm="fonction forme Chi");
+        }
+
+        phi[i][]=phi[i][].*VecteurproprelocK[];
+
+        if (debug){
+            plot(phi[i],wait=1,value=1,fill=1, cmm="fonction forme Chi*Phi");
+        }
+
+        phiEps[storei][] = phi[i][]; // save basis functions for multiscale reconstruction below
+	}
+	// Computation of matrix elements
+	for (int j=0; j<3; j++)
+	{ //loop over all corners for matrix contributions on K
+		for (int i=0; i<3; i++) {
+			// int ii = contr[i]; // seems superfluous ???
+			// Find global DOF index for trial functions j and test function i,
+			// compute matrix contributions,
+			// save these in Imat[nnz], Jmat[nnz] and Mmat[nnz]
+            if (recombinebool){
+                Imat[nnz] = VH(recombine(k,Ntri),i);
+			    Jmat[nnz] = VH(recombine(k,Ntri),j);
+            } else {
+                Imat[nnz] = VH(k,i);
+			    Jmat[nnz] = VH(k,j);
+            }
+			Amat[nnz] = int2d(K)(sigmaeps*phi[i]*phi[j]) + int2d(K)(eps^2*a(Aeps, phi[i], phi[j])); 
+            Bmat[nnz] = int2d(K)(phi[i]*phi[j]);
+			nnz++;
+		}
+	}
+	vk[][k]=0;
+}
+toc = clock();
+
+printmessage("Temps de construction des fonctions de forme : " << toc - tic << " secondes ");
+
+///////////////////////////////////////////////////////////////////////
+// Online stage                                                      //
+///////////////////////////////////////////////////////////////////////
+
+include "online_MsFEM.edp"
+
+///////////////////////////////////////////////////////////////////////
+// Reference solution and error computation                          //
+///////////////////////////////////////////////////////////////////////
+
+// Load or compute reference solution
+
+include "post.edp"

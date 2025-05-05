@@ -1,0 +1,397 @@
+// react_diff_P1.edp
+//
+// A FreeFEM++ script that shows the usual, intrusive MsFEM approach on a simple diffusion problem
+//
+// Note that this implementation is possible mainly due to the following in-depth functionality of FreeFEM++:
+// - VK(k,i) gives the global degree of freedom of the ith local DOF in the kth triangle of the mesh
+
+//mpirun -np 1 FreeFem++-mpi -wg main_correctors_DomaineR.edp -v 0
+
+string nameMethod = "correctors_convergence";
+
+
+load "PETSc"
+//load "SLEPc"
+
+bool plots =1; // 1 if plots are used, 0 otherwise
+bool debug = 0;
+bool debugprecis = 0;
+
+///////////////////////////////////////////////////////////////////////
+// Declaring and reading external parameters                         //
+///////////////////////////////////////////////////////////////////////
+
+// Outfile stream for process output
+ofstream ffLog("log_msfem.txt", append);
+
+include "tools.edp"
+
+real tic = clock();
+// Parameters defining the domain
+real L, Lx, Ly;
+// Parameters defining the fine mesh
+int Ndiscr, Nx, Ny;
+// Parameters defining the coarse mesh
+int n, nx, ny;
+// Parameters defining the PDE
+real eps;
+//
+int NumberEigenValue; // numero of eigenvalues to compute
+//
+int NumCoeffDiff; // numero of the diffusion coefficient to use
+//
+real osCoef; // Coefficient for the oversampling patch size  (osCoef = 1 for the minimal patch size)
+
+// Reading parameters from external file "parameters.txt"
+{
+	ifstream f("parameters.txt");
+	string read;
+	f >> read >> L;        Lx=L; Ly=L;
+	f >> read >> Ndiscr;   Nx=Ndiscr; Ny=Ndiscr;
+	f >> read >> n;		   nx=n; ny=n;
+  f >> read >> eps;
+  f >> read >> NumCoeffDiff;
+  f >> read >> NumberEigenValue;
+  f >> read >> osCoef;
+}
+
+
+real hx=Lx/Nx, hy=Ly/Ny; // Fine mesh Th
+real Hx=Lx/nx, Hy=Ly/ny; // Coarse mesh Th
+mesh Th=square(Nx,Ny,[Lx*x,Ly*y]); //fine mesh
+fespace Vh(Th,P1); //fine global FE space
+
+///////////////////////////////////////////////////////////////////////
+// Define internal data structures                                   //
+///////////////////////////////////////////////////////////////////////
+
+////////// Diffusion coefficient //////////
+string ParameterDescription;
+
+func Aeps = 6+5*cos(2*(pi/eps)*(x+2*y))*sin(2*(pi/eps)*(x-y));
+
+func Ay =6+5*cos(2*pi*(x+2*y))*sin(2*pi*(x-y));
+
+/* func Aeps = 6+5*sin(2*(pi/eps)*x);
+
+func Ay =6+5*sin(2*pi*x);
+ */
+//func FiltrePhi= 1;
+func FiltrePhi= (1-x)*(1-x)*x*x*(1-y)*(1-y)*y*y*900;
+////////////////////////////////////////////////////////////////
+
+macro a(dif,u,v) (dif*dx(u)*dx(v) + dif*dy(u)*dy(v))//EOM
+// Plot diffusion coefficient
+Vh aploty=Ay;
+
+if (plots) plot(aploty, wait=1,value=1,fill=1, cmm="Diffusion coefficient y");
+
+Vh aplot=Aeps;
+
+if (plots) plot(aplot, wait=1,value=1,fill=1, cmm="Diffusion coefficient");
+
+Vh FiltrePhiP = FiltrePhi;
+
+if (plots){ plot(FiltrePhiP,wait=1,value=1,fill=1, cmm="FiltrePhiP");}
+
+real toc = clock();
+
+printmessage("Temps d'initialisation du maillage, et de l'espace de discretisation : " << toc - tic << " secondes ");
+
+tic = clock();
+
+///////////////////////////////////////////////////////////////////////
+// - Computation of correctors                                       //
+///////////////////////////////////////////////////////////////////////
+
+// Cellule unité
+fespace Vhperio(Th, P1, periodic=[[2, y], [4, y], [1, x], [3, x]]); //bi-periodic FE
+
+// Problem
+
+varf correctors(uh,vh) = int2d(Th)(a(Ay,uh,vh));
+
+varf RHScorrectorsX(unused,vh) = int2d(Th)(-1*Ay*dx(vh));
+varf RHScorrectorsY(unused,vh) = int2d(Th)(-1*Ay*dy(vh));
+
+matrix Aloc=correctors(Vhperio,Vhperio);
+set(Aloc, solver=UMFPACK);
+
+Vhperio Bx; Bx[] = RHScorrectorsX(0,Vhperio);
+Vhperio By; By[] = RHScorrectorsY(0,Vhperio);
+
+Vhperio CorrectorX ; CorrectorX[] = Aloc^-1*Bx[];
+Vhperio CorrectorY ; CorrectorY[] = Aloc^-1*By[];
+
+// Remove the mean from CorrectorX
+real meanCorrectorX = int2d(Th)(CorrectorX) / int2d(Th)(1);
+CorrectorX[] -= meanCorrectorX;
+
+// Remove the mean from CorrectorY
+real meanCorrectorY = int2d(Th)(CorrectorY) / int2d(Th)(1);
+CorrectorY[] -= meanCorrectorY;
+
+Vh CorrectorXeps = CorrectorX(fmod(x/eps,1), fmod(y/eps,1)) ;
+Vh CorrectorYeps = CorrectorY(fmod(x/eps,1), fmod(y/eps,1)) ;
+if (plots)
+{
+    plot(CorrectorXeps,wait=1,value=1,fill=1, cmm="CorrectorXeps");
+    plot(CorrectorYeps,wait=1,value=1,fill=1, cmm="CorrectorYeps");
+}
+
+// Same but with epsilon
+
+varf correctorsR(uh,vh) = int2d(Th)(eps*a(Aeps,uh,vh));
+
+varf RHScorrectorsXR(unused,vh) = int2d(Th)(-1*Aeps*dx(vh));
+varf RHScorrectorsYR(unused,vh) = int2d(Th)(-1*Aeps*dy(vh));
+
+matrix AlocR=correctorsR(Vhperio,Vhperio);
+set(AlocR, solver=UMFPACK);
+
+Vhperio BxR; BxR[] = RHScorrectorsXR(0,Vhperio);
+Vhperio ByR; ByR[] = RHScorrectorsYR(0,Vhperio);
+
+Vhperio CorrectorXR ; CorrectorXR[] = AlocR^-1*BxR[];
+Vhperio CorrectorYR ; CorrectorYR[] = AlocR^-1*ByR[];
+
+// Remove the mean from CorrectorX
+real meanCorrectorXR = int2d(Th)(CorrectorXR) / int2d(Th)(1);
+CorrectorXR[] -= meanCorrectorXR;
+// Remove the mean from CorrectorY
+real meanCorrectorYR = int2d(Th)(CorrectorYR) / int2d(Th)(1);
+CorrectorYR[] -= meanCorrectorYR;
+
+if (plots)
+{
+    plot(CorrectorXR,wait=1,value=1,fill=1, cmm="CorrectorXR");
+    plot(CorrectorYR,wait=1,value=1,fill=1, cmm="CorrectorYR");
+}
+
+// Same but with Filtrage
+
+varf correctorsRFiltre(uh,vh) = int2d(Th)(FiltrePhi*eps*a(Aeps,uh,vh));
+
+//varf RHScorrectorsXRFiltre(unused,vh) = int2d(Th)(-1*Aeps*(FiltrePhiP*dx(vh) + dx(FiltrePhiP)*vh));
+//varf RHScorrectorsYRFiltre(unused,vh) = int2d(Th)(-1*Aeps*(FiltrePhiP*dy(vh) + dy(FiltrePhiP)*vh));
+varf RHScorrectorsXRFiltre(unused,vh) = int2d(Th)(-1*FiltrePhi*Aeps*dx(vh));
+varf RHScorrectorsYRFiltre(unused,vh) = int2d(Th)(-1*FiltrePhi*Aeps*dy(vh));
+
+
+varf CLXfiltreloc(unused, vh)
+    = int2d(Th)(FiltrePhi*1*dx(vh)) 
+    ;
+varf CLYfiltreloc (unused, vh)
+    = int2d(Th)(FiltrePhi*1*dy(vh)) 
+    ;
+
+matrix AlocRFiltre=correctorsRFiltre(Vh,Vh);
+set(AlocRFiltre, solver = sparsesolver);
+real[int] BxRFiltre = RHScorrectorsXRFiltre(0,Vh);
+real[int] ByRFiltre = RHScorrectorsYRFiltre(0,Vh);
+real[int] CLXfiltrelocS1 = CLXfiltreloc(0,Vh);
+real[int] CLYfiltrelocS1 = CLYfiltreloc(0,Vh);
+
+matrix AlocStmp(BxRFiltre.n +2,BxRFiltre.n +2) ;
+
+AlocStmp = [ [AlocRFiltre , CLXfiltrelocS1 , CLYfiltrelocS1] , [CLXfiltrelocS1' , 0, 0] , [CLYfiltrelocS1' , 0 , 0] ];
+set(AlocStmp, solver = sparsesolver);
+
+real[int] BxRFiltreBLOC(BxRFiltre.n +2);
+BxRFiltreBLOC(0:BxRFiltre.n-1) = BxRFiltre(0:BxRFiltre.n-1);
+BxRFiltreBLOC(BxRFiltre.n) = 0;
+BxRFiltreBLOC(BxRFiltre.n+1) = 0;
+
+real[int] ByRFiltreBLOC(ByRFiltre.n +2);
+ByRFiltreBLOC(0:ByRFiltre.n-1) = ByRFiltre(0:ByRFiltre.n-1);
+ByRFiltreBLOC(ByRFiltre.n) = 0;
+ByRFiltreBLOC(ByRFiltre.n+1) = 0;
+
+real[int] CorrectorXRFiltreBLOC(AlocStmp.n) ; CorrectorXRFiltreBLOC = AlocStmp^-1*BxRFiltreBLOC;
+real[int] CorrectorYRFiltreBLOC(AlocStmp.n) ; CorrectorYRFiltreBLOC = AlocStmp^-1*ByRFiltreBLOC;
+
+Vh CorrectorXRFiltre;
+CorrectorXRFiltre[](0:CorrectorXRFiltre.n-1) = CorrectorXRFiltreBLOC(0:CorrectorXRFiltreBLOC.n-3);
+real LagrangeMultiplierX1 = CorrectorXRFiltreBLOC(CorrectorXRFiltreBLOC.n -2);
+real LagrangeMultiplierX2 = CorrectorXRFiltreBLOC(CorrectorXRFiltreBLOC.n -1);
+cout << "lagrangeMultiplierX1 = " << LagrangeMultiplierX1 << " lagrangeMultiplierX2 = " << LagrangeMultiplierX2 << endl;
+Vh CorrectorYRFiltre;
+CorrectorYRFiltre[](0:CorrectorYRFiltre.n-1) = CorrectorYRFiltreBLOC(0:CorrectorYRFiltreBLOC.n-3);
+real LagrangeMultiplierY1 = CorrectorYRFiltreBLOC(CorrectorYRFiltreBLOC.n -2);
+real LagrangeMultiplierY2 = CorrectorYRFiltreBLOC(CorrectorYRFiltreBLOC.n -1);
+cout << "lagrangeMultiplierY1 = " << LagrangeMultiplierY1 << " lagrangeMultiplierY2 = " << LagrangeMultiplierY2 << endl;
+
+// Remove the mean from CorrectorX
+real meanCorrectorXRFiltre = int2d(Th)(CorrectorXRFiltre) / int2d(Th)(1);
+CorrectorXRFiltre[] -= meanCorrectorXRFiltre;
+// Remove the mean from CorrectorY
+real meanCorrectorYRFiltre = int2d(Th)(CorrectorYRFiltre) / int2d(Th)(1);
+CorrectorYRFiltre[] -= meanCorrectorYRFiltre;
+
+if (plots)
+{
+    plot(CorrectorXRFiltre,wait=1,value=1,fill=1, cmm="CorrectorXRFiltre");
+    plot(CorrectorYRFiltre,wait=1,value=1,fill=1, cmm="CorrectorYRFiltre");
+}
+///////////////////////////////////////////////////////////////////////
+toc = clock();
+
+printmessage("Temps de calcul des correcteurs : " << toc - tic << " secondes ");
+
+///////////////////////////////////////////////////////////////////////
+//                        Error computation                          //
+///////////////////////////////////////////////////////////////////////
+printmessage("Calcul des erreurs et stockage dans un fichier");
+tic = clock();
+
+Vh CorrectorXRh ; CorrectorXRh = CorrectorXR;
+Vh CorrectorYRh ; CorrectorYRh = CorrectorYR;
+
+// Homogenized coefficients
+real[int] CoeffHomogenized(4);
+CoeffHomogenized[0] = int2d(Th)(Ay*(dx(CorrectorX)+1)*(dx(CorrectorX)+1));
+CoeffHomogenized[1] = int2d(Th)(Ay*(dy(CorrectorY)+1));
+CoeffHomogenized[2] = int2d(Th)(Ay*(dx(CorrectorY)));
+CoeffHomogenized[3] = int2d(Th)(Ay*(dy(CorrectorX)));
+cout << "A11 = " << CoeffHomogenized[0] << endl;
+cout << "A22 = " << CoeffHomogenized[1] << endl;
+cout << "A12 = " << CoeffHomogenized[2] << endl;
+cout << "A21 = " << CoeffHomogenized[3] << endl;
+
+// Homogenized coefficients
+real[int] CoeffHomogenizedWeps(4);
+CoeffHomogenizedWeps[0] = int2d(Th)(Aeps*(eps*dx(CorrectorXeps)+1));
+CoeffHomogenizedWeps[1] = int2d(Th)(Aeps*(eps*dy(CorrectorYeps)+1));
+CoeffHomogenizedWeps[2] = int2d(Th)(Aeps*(eps*dx(CorrectorYeps)));
+CoeffHomogenizedWeps[3] = int2d(Th)(Aeps*(eps*dy(CorrectorXeps)));
+cout << "A11Weps = " << CoeffHomogenizedWeps[0] << endl;
+cout << "A22Weps = " << CoeffHomogenizedWeps[1] << endl;
+cout << "A12Weps = " << CoeffHomogenizedWeps[2] << endl;
+cout << "A21Weps = " << CoeffHomogenizedWeps[3] << endl;
+
+// Homogenized coefficients
+real[int] CoeffHomogenizedApprox(4);
+CoeffHomogenizedApprox[0] = int2d(Th)(Aeps*(eps*dx(CorrectorXRh)+1));
+CoeffHomogenizedApprox[1] = int2d(Th)(Aeps*(eps*dy(CorrectorYRh)+1));
+CoeffHomogenizedApprox[2] = int2d(Th)(Aeps*(eps*dx(CorrectorYRh)));
+CoeffHomogenizedApprox[3] = int2d(Th)(Aeps*(eps*dy(CorrectorXRh)));
+cout << "A11Approx = " << CoeffHomogenizedApprox[0] << endl;
+cout << "A22Approx = " << CoeffHomogenizedApprox[1] << endl;
+cout << "A12Approx = " << CoeffHomogenizedApprox[2] << endl;
+cout << "A21Approx = " << CoeffHomogenizedApprox[3] << endl;
+//  plot(CorrectorXeps-CorrectorXRh,wait=1,value=1,fill=1, cmm="CorrectorXeps-CorrectorXR");
+//  plot(CorrectorYeps-CorrectorYRh,wait=1,value=1,fill=1, cmm="CorrectorYeps-CorrectorYR");
+
+// Homogenized coefficients
+real[int] CoeffHomogenizedFiltre(4);
+CoeffHomogenizedFiltre[0] = int2d(Th)(FiltrePhi*(eps*dx(CorrectorXRFiltre)+1)*Aeps*(eps*dx(CorrectorXRFiltre)+1));
+CoeffHomogenizedFiltre[1] = int2d(Th)(FiltrePhi*(eps*dy(CorrectorYRFiltre)+1)*Aeps*(eps*dy(CorrectorYRFiltre)+1));
+CoeffHomogenizedFiltre[2] = int2d(Th)(FiltrePhi*Aeps*(eps*dx(CorrectorYRFiltre)));
+CoeffHomogenizedFiltre[3] = int2d(Th)(FiltrePhi*(eps*dy(CorrectorXRFiltre))*Aeps*(eps*dy(CorrectorXRFiltre)));
+cout << "A11filtre = " << CoeffHomogenizedFiltre[0] << endl;
+cout << "A22filtre = " << CoeffHomogenizedFiltre[1] << endl;
+cout << "A12filtre = " << CoeffHomogenizedFiltre[2] << endl;
+cout << "A21filtre = " << CoeffHomogenizedFiltre[3] << endl;
+
+
+real[int] ErreurCoeffHomogenized(3);
+ErreurCoeffHomogenized[0] = abs((CoeffHomogenized[0] - CoeffHomogenizedApprox[0])/CoeffHomogenized[0]);
+ErreurCoeffHomogenized[1] = abs((CoeffHomogenized[1] - CoeffHomogenizedApprox[1])/CoeffHomogenized[1]);
+ErreurCoeffHomogenized[2] = abs((CoeffHomogenized[2] - CoeffHomogenizedApprox[2])/CoeffHomogenized[2]);
+
+real[int] ErreurCoeffHomogenizedFiltre(3);
+ErreurCoeffHomogenizedFiltre[0] = abs((CoeffHomogenized[0] - CoeffHomogenizedFiltre[0])/CoeffHomogenized[0]);
+ErreurCoeffHomogenizedFiltre[1] = abs((CoeffHomogenized[1] - CoeffHomogenizedFiltre[1])/CoeffHomogenized[1]);
+ErreurCoeffHomogenizedFiltre[2] = abs((CoeffHomogenized[2] - CoeffHomogenizedFiltre[2])/CoeffHomogenized[2]);
+
+real xCL = 1.0/3; //ensure that the patch-container is a subset of the global domain
+real xCR = 2.0/3;
+real yCL = 1.0/3;
+real yCR = 2.0/3;
+
+real dxC = xCR - xCL;
+int dxCn = lrint(dxC/hx); //integer closest to dxC/hx -- ensures that the mesh C defined below is compatible with Th
+real dyC = yCR - yCL;
+int dyCn = lrint(dyC/hy);
+
+mesh C=square(dxCn, dyCn, [xCL + dxC*x, yCL + dyC*y]);
+fespace VC(C, P1);
+VC CorrectorXRFiltreC ; CorrectorXRFiltreC = CorrectorXRFiltre(x,y);
+VC CorrectorYRFiltreC ; CorrectorYRFiltreC = CorrectorYRFiltre(x,y);
+VC CorrectorXepsC ; CorrectorXepsC = CorrectorXeps(x,y);
+VC CorrectorYepsC ; CorrectorYepsC = CorrectorYeps(x,y);
+VC CorrectorXRC ; CorrectorXRC = CorrectorXR(x,y);
+VC CorrectorYRC ; CorrectorYRC = CorrectorYR(x,y);
+
+// Save the error on the domaine C
+
+VC DiffCorrectorX = CorrectorXepsC-CorrectorXRC;
+VC DiffCorrectorY = CorrectorYepsC-CorrectorYRC;    
+
+VC DiffCorrectorXfiltre = CorrectorXepsC-CorrectorXRFiltreC;
+VC DiffCorrectorYfiltre = CorrectorYepsC-CorrectorYRFiltreC;
+
+if (plots)
+{
+    plot(DiffCorrectorX,wait=1,value=1,fill=1, cmm="CorrectorXeps-CorrectorXR on C");
+    plot(DiffCorrectorY,wait=1,value=1,fill=1, cmm="CorrectorYeps-CorrectorYR on C");
+    plot(DiffCorrectorXfiltre,wait=1,value=1,fill=1, cmm="CorrectorXeps-CorrectorXRFiltre on C");
+    plot(DiffCorrectorYfiltre,wait=1,value=1,fill=1, cmm="CorrectorYeps-CorrectorYRFiltre on C");
+}
+
+real ErreurH1correcteurX = sqrt(int2d(C)(dx(DiffCorrectorX)*dx(DiffCorrectorX)+dy(DiffCorrectorX)*dy(DiffCorrectorX))/int2d(C)(dx(CorrectorXeps)*dx(CorrectorXeps)+dy(CorrectorXeps)*dy(CorrectorXeps)));
+real ErreurL2correcteurX = sqrt(int2d(C)(DiffCorrectorX*DiffCorrectorX)/int2d(C)(CorrectorXeps*CorrectorXeps));
+real ErreurL1correcteurX = int2d(C)(DiffCorrectorX);
+
+real ErreurH1correcteurY = sqrt(int2d(C)(dx(DiffCorrectorY)*dx(DiffCorrectorY)+dy(DiffCorrectorY)*dy(DiffCorrectorY))/int2d(C)(dx(CorrectorYeps)*dx(CorrectorYeps)+dy(CorrectorYeps)*dy(CorrectorYeps)));
+real ErreurL2correcteurY = sqrt(int2d(C)(DiffCorrectorY*DiffCorrectorY)/int2d(C)(CorrectorYeps*CorrectorYeps));
+real ErreurL1correcteurY = int2d(C)(DiffCorrectorY);
+
+real ErreurH1correcteurXfiltre = sqrt(int2d(C)(dx(DiffCorrectorXfiltre)*dx(DiffCorrectorXfiltre)+dy(DiffCorrectorXfiltre)*dy(DiffCorrectorXfiltre))/int2d(C)(dx(CorrectorXeps)*dx(CorrectorXeps)+dy(CorrectorXeps)*dy(CorrectorXeps)));
+real ErreurL2correcteurXfiltre = sqrt(int2d(C)(DiffCorrectorXfiltre*DiffCorrectorXfiltre)/int2d(C)(CorrectorXeps*CorrectorXeps));
+real ErreurL1correcteurXfiltre = int2d(C)(DiffCorrectorXfiltre);
+
+real ErreurH1correcteurYfiltre = sqrt(int2d(C)(dx(DiffCorrectorYfiltre)*dx(DiffCorrectorYfiltre)+dy(DiffCorrectorYfiltre)*dy(DiffCorrectorYfiltre))/int2d(C)(dx(CorrectorYeps)*dx(CorrectorYeps)+dy(CorrectorYeps)*dy(CorrectorYeps)));
+real ErreurL2correcteurYfiltre = sqrt(int2d(C)(DiffCorrectorYfiltre*DiffCorrectorYfiltre)/int2d(C)(CorrectorYeps*CorrectorYeps));
+real ErreurL1correcteurYfiltre = int2d(C)(DiffCorrectorYfiltre);
+
+{// Writing errors to an external file
+    string errname = "Results/errors_correctors" + "_Coeffs_" + NumCoeffDiff + ".txt";
+    ofstream ff(errname, append);
+    ff  << ParameterDescription
+        << endl
+        << "\t"
+        << "N\t" << Ndiscr << "\t"
+        << "eps\t" << eps << "\t"
+        << endl
+        << "\t\tL1 X\t\tL1 Y\t\tL2 rel X\t\tL2 rel Y\t\tH1 rel X\t\tH1 rel Y\t\t A11\t\t A22\t\t A12" << endl;       
+    
+    ff  << "\t\t"
+        << ErreurL1correcteurX  <<"\t"<< ErreurL1correcteurY  <<"\t"<< ErreurL2correcteurX  <<"\t"<<"\t"<< ErreurL2correcteurY  <<"\t"<<"\t"<< ErreurH1correcteurX  <<"\t"<<"\t"
+        << ErreurH1correcteurY << "\t"<<"\t" << ErreurCoeffHomogenized[0] << "\t" << ErreurCoeffHomogenized[1] << "\t" << ErreurCoeffHomogenized[2] << endl;
+       
+	ff<<endl;
+}
+
+{// Writing errors to an external file
+    string errname = "Results/errors_correctors" + "_Coeffs_" + NumCoeffDiff + "_Filtre.txt";
+    ofstream ff(errname, append);
+    ff  << ParameterDescription
+        << endl
+        << "\t"
+        << "N\t" << Ndiscr << "\t"
+        << "eps\t" << eps << "\t"
+        << endl
+        << "\t\tL1 X\t\tL1 Y\t\tL2 rel X\t\tL2 rel Y\t\tH1 rel X\t\tH1 rel Y\t\t A11\t\t A22\t\t A12" << endl;       
+    
+    ff  << "\t\t"
+        << ErreurL1correcteurXfiltre  <<"\t"<< ErreurL1correcteurYfiltre  <<"\t"<< ErreurL2correcteurXfiltre  <<"\t"<<"\t"<< ErreurL2correcteurYfiltre  <<"\t"<<"\t"<< ErreurH1correcteurXfiltre  <<"\t"<<"\t"
+        << ErreurH1correcteurYfiltre << "\t"<<"\t" << ErreurCoeffHomogenizedFiltre[0] << "\t" << ErreurCoeffHomogenizedFiltre[1] << "\t" << ErreurCoeffHomogenizedFiltre[2] << endl;
+       
+    ff<<endl;
+}
+toc = clock();
+
+printmessage("Temps de calcul des erreurs : " << toc - tic << " secondes ");
+
+printmessage("////////////////////////////////////////////////////////////////");

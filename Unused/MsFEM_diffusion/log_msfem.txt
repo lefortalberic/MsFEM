@@ -1,0 +1,248 @@
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.020947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.060093 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 7.70431 secondes 
+Temps de resolution online du probleme MsFEM : 0.000725 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.48106 secondes 
+Temps de calcul de la solution de reference : 0.467995 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.318499 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.020947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.058106 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 7.58331 secondes 
+Temps de resolution online du probleme MsFEM : 0.000666 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.4598 secondes 
+Temps de calcul de la solution de reference : 0.471208 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.321881 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.020947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.058652 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 8.23395 secondes 
+Temps de resolution online du probleme MsFEM : 0.00162 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.67478 secondes 
+Temps de calcul de la solution de reference : 0.832648 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.326611 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.020947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.181784 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 9.45684 secondes 
+Temps de resolution online du probleme MsFEM : 0.002264 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.86041 secondes 
+Temps de calcul de la solution de reference : 0.884701 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.426409 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.020947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.184154 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 9.40166 secondes 
+Temps de resolution online du probleme MsFEM : 0.002212 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.87051 secondes 
+Temps de calcul de la solution de reference : 0.847271 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.40672 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.167498 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 10.2446 secondes 
+Temps de resolution online du probleme MsFEM : 0.002282 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.92989 secondes 
+Temps de calcul de la solution de reference : 0.792212 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.409761 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.151403 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 9.37037 secondes 
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.16211 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 9.95468 secondes 
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.154214 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 10.332 secondes 
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.158334 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 9.18687 secondes 
+Temps de resolution online du probleme MsFEM : 0.002178 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.63475 secondes 
+Temps de calcul de la solution de reference : 0.715801 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.389617 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.163911 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 9.26207 secondes 
+Temps de resolution online du probleme MsFEM : 0.002158 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.51208 secondes 
+Temps de calcul de la solution de reference : 0.782929 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.397067 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.201547 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 7.82243 secondes 
+Temps de resolution online du probleme MsFEM : 0.002031 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.62674 secondes 
+Temps de calcul de la solution de reference : 0.768684 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.405929 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_16_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.202921 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 8.05907 secondes 
+Temps de resolution online du probleme MsFEM : 0.002221 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 5.69801 secondes 
+Temps de calcul de la solution de reference : 0.847518 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.413346 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_512_n_8_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.726611 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 14.6883 secondes 
+Temps de resolution online du probleme MsFEM : 0.001409 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 6.1386 secondes 
+Temps de calcul de la solution de reference : 4.52493 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 1.59385 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_1024_n_8_eps_0.060947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 5.04717 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 60.9844 secondes 
+Temps de resolution online du probleme MsFEM : 0.001426 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 24.6786 secondes 
+Temps de calcul de la solution de reference : 28.6533 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 8.5504 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_512_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 1.08987 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 14.6829 secondes 
+Temps de resolution online du probleme MsFEM : 0.001406 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 6.10953 secondes 
+Temps de calcul de la solution de reference : 4.22847 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 1.57227 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.296343 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 3.77212 secondes 
+Temps de resolution online du probleme MsFEM : 0.00129 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.59195 secondes 
+Temps de calcul de la solution de reference : 0.728944 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.396952 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.335228 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 2.98753 secondes 
+Temps de resolution online du probleme MsFEM : 0.001258 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.54141 secondes 
+Temps de calcul de la solution de reference : 0.739848 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.394018 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.281716 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 3.61354 secondes 
+Temps de resolution online du probleme MsFEM : 0.001279 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.74311 secondes 
+Temps de calcul de la solution de reference : 0.727164 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.391477 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.289815 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 3.5398 secondes 
+Temps de resolution online du probleme MsFEM : 0.001264 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.72638 secondes 
+Temps de calcul de la solution de reference : 0.729371 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.402699 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.290547 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 3.68309 secondes 
+Temps de resolution online du probleme MsFEM : 0.001216 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.61162 secondes 
+Temps de calcul de la solution de reference : 0.859909 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.466392 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.290571 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 3.47611 secondes 
+Temps de resolution online du probleme MsFEM : 0.001264 secondes 
+Reconstruction of the MsFEM solution on the fine scale
+Temps de reconstruction of the MsFEM solution on the fine scale : 1.62803 secondes 
+Temps de calcul de la solution de reference : 0.805445 secondes 
+Calcul des erreurs et stockage dans un fichier
+Temps de calcul des erreurs : 0.406777 secondes 
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+// Debut de la methode MsFEM_LIN avec les parametres _N_256_n_8_eps_0.160947
+Temps d'initialisation du maillage, et de l'espace de discretisation : 0.292668 secondes 
+Construction des fonctions de forme 
+Temps de construction des fonctions de forme : 3.49732 secondes 
